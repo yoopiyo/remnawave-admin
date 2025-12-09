@@ -1517,6 +1517,8 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
         return
     except ApiClientError:
         logger.exception("Failed to load squads")
+    except Exception:
+        logger.exception("Unexpected error while loading squads")
 
     squads_sorted = sorted(squads, key=lambda s: s.get("viewPosition", 0))
     markup = user_create_squad_keyboard(squads_sorted)
@@ -1680,7 +1682,13 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
             data["telegram_id"] = None
         ctx["stage"] = "squad"
         PENDING_INPUT[user_id] = ctx
-        await _send_squad_prompt(message, ctx)
+        try:
+            await _send_squad_prompt(message, ctx)
+        except Exception:
+            logger.exception("Squad prompt failed, falling back to manual entry")
+            await _send_user_create_prompt(
+                message, _("user.squad_load_failed"), user_create_squad_keyboard([])
+            )
         return
 
     if stage == "squad":
@@ -1758,7 +1766,13 @@ async def _handle_user_create_callback(callback: CallbackQuery) -> None:
             data["telegram_id"] = None
             ctx["stage"] = "squad"
             PENDING_INPUT[user_id] = ctx
-            await _send_squad_prompt(callback, ctx)
+            try:
+                await _send_squad_prompt(callback, ctx)
+            except Exception:
+                logger.exception("Squad prompt failed from callback, falling back to manual entry")
+                await _send_user_create_prompt(
+                    callback, _("user.squad_load_failed"), user_create_squad_keyboard([])
+                )
             return
         if field == "squad":
             data["squad_uuid"] = None
