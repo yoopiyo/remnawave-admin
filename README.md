@@ -10,11 +10,11 @@
    pip install -r requirements.txt
    ```
 2. Скопируй `.env.example` в `.env` и заполни:
-   - `BOT_TOKEN` — токен @BotFather
-   - `API_BASE_URL` — URL Remnawave API
-   - `API_TOKEN` — Bearer/JWT токен API
-   - `ADMINS` — Telegram ID администраторов через запятую
-   - `DEFAULT_LOCALE` — `ru` или `en`
+   - `BOT_TOKEN` - токен @BotFather
+   - `API_BASE_URL` - URL Remnawave API (в docker-сети: `http://remnawave:3000`)
+   - `API_TOKEN` - Bearer/JWT токен API
+   - `ADMINS` - Telegram ID администраторов через запятую
+   - `DEFAULT_LOCALE` - `ru` или `en`
 3. Запусти:
    ```bash
    python -m src.main
@@ -23,7 +23,8 @@
 ## Docker Compose
 ```bash
 cp .env.example .env
-# Заполни .env
+# Заполни .env, для docker-сети укажи API_BASE_URL=http://remnawave:3000
+# Сеть remnawave-network должна существовать (создаётся панелью, либо вручную: docker network create remnawave-network)
 docker compose pull
 docker compose up -d
 ```

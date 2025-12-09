@@ -8,3 +8,9 @@ services:
       - .env
     environment:
       - PYTHONPATH=/app
+    networks:
+      - remnawave-network
+
+networks:
+  remnawave-network:
+    external: true
