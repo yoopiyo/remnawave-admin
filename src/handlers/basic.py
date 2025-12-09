@@ -38,6 +38,7 @@ from src.utils.formatters import (
     build_host_summary,
     build_node_summary,
     build_user_summary,
+    build_created_user,
     format_bytes,
     format_uptime,
     build_subscription_summary,
@@ -107,6 +108,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_billing_history_input(message, ctx)
     elif action.startswith("billing_nodes_"):
         await _handle_billing_nodes_input(message, ctx)
+    elif action == "user_create":
+        await _handle_user_create_input(message, ctx)
     else:
         await message.answer(_("errors.generic"))
 
@@ -277,6 +280,18 @@ async def cmd_user(message: Message) -> None:
         return
     query = parts[1].strip()
     await _send_user_detail(message, query)
+
+
+@router.message(Command("user_create"))
+async def cmd_user_create(message: Message) -> None:
+    if await _not_admin(message):
+        return
+
+    parts = message.text.split()
+    if len(parts) < 3:
+        await message.answer(_("user.usage_create"), reply_markup=users_menu_keyboard())
+        return
+    await _create_user(message, parts[1], parts[2], parts[3] if len(parts) > 3 else None)
 
 
 @router.message(Command("nodes"))
@@ -451,6 +466,15 @@ async def cb_section_users(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     await callback.message.edit_text(_("bot.menu"), reply_markup=users_menu_keyboard())
+
+
+@router.callback_query(F.data == "menu:create_user")
+async def cb_create_user(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    PENDING_INPUT[callback.from_user.id] = {"action": "user_create"}
+    await callback.message.edit_text(_("user.prompt_create"), reply_markup=users_menu_keyboard())
 
 
 @router.callback_query(F.data == "menu:section:nodes")
@@ -1437,6 +1461,49 @@ async def _fetch_user(query: str) -> dict:
     if query.isdigit():
         return await api_client.get_user_by_telegram_id(int(query))
     return await api_client.get_user_by_username(query)
+
+
+async def _create_user(
+    target: Message | CallbackQuery, username: str, expire_at: str, telegram_id_raw: str | None = None
+) -> None:
+    async def _respond(text: str, reply_markup: InlineKeyboardMarkup) -> None:
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(text, reply_markup=reply_markup)
+        else:
+            await target.answer(text, reply_markup=reply_markup)
+
+    try:
+        telegram_id = int(telegram_id_raw) if telegram_id_raw else None
+    except ValueError:
+        await _respond(_("user.usage_create"), users_menu_keyboard())
+        return
+
+    try:
+        user = await api_client.create_user(username=username, expire_at=expire_at, telegram_id=telegram_id)
+    except UnauthorizedError:
+        await _respond(_("errors.unauthorized"), users_menu_keyboard())
+        return
+    except ApiClientError:
+        logger.exception("Create user failed")
+        await _respond(_("errors.generic"), users_menu_keyboard())
+        return
+
+    summary = build_created_user(user, _)
+    info = user.get("response", user)
+    status = info.get("status", "UNKNOWN")
+    reply_markup = user_actions_keyboard(info.get("uuid", ""), status)
+    await _respond(summary, reply_markup)
+
+
+async def _handle_user_create_input(message: Message, ctx: dict) -> None:
+    parts = message.text.split()
+    if len(parts) < 2:
+        PENDING_INPUT[message.from_user.id] = {"action": "user_create"}
+        await message.answer(_("user.prompt_create"), reply_markup=users_menu_keyboard())
+        return
+    username, expire_at = parts[0], parts[1]
+    telegram_id = parts[2] if len(parts) > 2 else None
+    await _create_user(message, username, expire_at, telegram_id)
 
 
 async def _fetch_health_text() -> str:

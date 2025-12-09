@@ -69,6 +69,22 @@ def build_user_summary(user: dict, t: Callable[[str], str]) -> str:
     )
 
 
+def build_created_user(user: dict, t: Callable[[str], str]) -> str:
+    info = user.get("response", user)
+    expire_at = format_datetime(info.get("expireAt"))
+    telegram_id = info.get("telegramId", NA)
+
+    return t("user.created").format(
+        username=info.get("username", "n/a"),
+        status=info.get("status", "UNKNOWN"),
+        uuid=info.get("uuid", "n/a"),
+        shortUuid=info.get("shortUuid", "n/a"),
+        telegramId=telegram_id if telegram_id is not None else NA,
+        expire=expire_at,
+        subscriptionUrl=info.get("subscriptionUrl", NA),
+    )
+
+
 def build_node_summary(node: dict, t: Callable[[str], str]) -> str:
     info = node.get("response", node)
     status = "DISABLED" if info.get("isDisabled") else ("ONLINE" if info.get("isConnected") else "OFFLINE")

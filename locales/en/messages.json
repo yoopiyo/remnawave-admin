@@ -1,7 +1,7 @@
 ﻿{
   "bot": {
     "welcome": "Welcome to the Remnawave admin bot.",
-    "help": "Available commands:\n/start - welcome message\n/help - this help\n/health - system health\n/stats - system stats\n/bandwidth - bandwidth stats\n/user <username|telegram_id> - find user\n/nodes - list nodes\n/node <uuid> - node details\n/nodes_usage - realtime node usage\n/nodes_range <start_iso> <end_iso> - usage by range\n/hosts - list hosts\n/host <uuid> - host details\n/sub <short_uuid> - subscription info\n/tokens - list tokens\n/templates - list templates\n/snippets - list snippets\n/configs - list config profiles\n/billing - billing history\n/providers - infra providers",
+    "help": "Available commands:\n/start - welcome message\n/help - this help\n/health - system health\n/stats - system stats\n/bandwidth - bandwidth stats\n/user <username|telegram_id> - find user\n/user_create <username> <expire_iso> [telegram_id] - create user\n/nodes - list nodes\n/node <uuid> - node details\n/nodes_usage - realtime node usage\n/nodes_range <start_iso> <end_iso> - usage by range\n/hosts - list hosts\n/host <uuid> - host details\n/sub <short_uuid> - subscription info\n/tokens - list tokens\n/templates - list templates\n/snippets - list snippets\n/configs - list config profiles\n/billing - billing history\n/providers - infra providers",
     "menu": "Choose an action:",
     "user_usage": "Send /user <username|telegram_id> to get user info."
   },
@@ -12,6 +12,7 @@
     "menu_billing": "Billing",
     "menu_bulk": "Bulk actions",
     "menu_system": "System",
+    "create_user": "Create user",
     "health": "Health",
     "stats": "Stats",
     "find_user": "Find user",
@@ -56,7 +57,10 @@
   },
   "user": {
     "not_found": "User not found.",
-    "summary": "User {username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nTraffic: {used} / {limit}\nTag: {tag}\nHWID limit: {hwid}\nExpires: {expire}\nOnline: {online}"
+    "summary": "User {username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nTraffic: {used} / {limit}\nTag: {tag}\nHWID limit: {hwid}\nExpires: {expire}\nOnline: {online}",
+    "created": "User created:\n{username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nExpires: {expire}\nSubscription URL: {subscriptionUrl}",
+    "prompt_create": "Send: <username> <expire_iso> [telegram_id]. Example: user1 2025-02-01T00:00:00Z 123456789",
+    "usage_create": "Usage: /user_create <username> <expire_iso> [telegram_id]"
   },
   "node": {
     "usage": "Send /node <uuid> to view and manage a node.",

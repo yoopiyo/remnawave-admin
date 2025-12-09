@@ -34,7 +34,7 @@ docker compose up -d
 
 ## Функциональность
 - Общие: `/start`, `/help`, `/health`, `/stats`, `/bandwidth`.
-- Пользователи: `/user <username|telegram_id>`, inline-действия enable/disable/reset/revoke, bulk-операции (сброс трафика, удаление, продление, статус, revoke).
+- Пользователи: `/user <username|telegram_id>`, создание `/user_create <username> <expire_iso> [telegram_id]`, inline-действия enable/disable/reset/revoke, bulk-операции (сброс трафика, удаление, продление, статус, revoke).
 - Ноды: список/детали, действия enable/disable/restart/reset, realtime и range статистика, bulk назначение профиля+inbounds.
 - Хосты: список/детали, enable/disable, bulk enable/disable/delete.
 - Подписки: `/sub <short_uuid>`, открытие ссылки.

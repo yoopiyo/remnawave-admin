@@ -28,6 +28,7 @@ def system_menu_keyboard() -> InlineKeyboardMarkup:
 def users_menu_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text=_("actions.create_user"), callback_data="menu:create_user")],
             [InlineKeyboardButton(text=_("actions.find_user"), callback_data="menu:find_user")],
             [InlineKeyboardButton(text=_("actions.subs"), callback_data="menu:subs")],
             [InlineKeyboardButton(text=_("actions.back"), callback_data="menu:back")],

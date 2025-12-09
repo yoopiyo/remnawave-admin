@@ -1,7 +1,7 @@
 ﻿{
   "bot": {
     "welcome": "Добро пожаловать в админ-бот Remnawave.",
-    "help": "Доступные команды:\n/start - приветствие\n/help - эта справка\n/health - состояние системы\n/stats - статистика\n/bandwidth - трафик\n/user <username|telegram_id> - найти пользователя\n/nodes - список нод\n/node <uuid> - детали ноды\n/nodes_usage - онлайн-статистика нод\n/nodes_range <start_iso> <end_iso> - трафик за период\n/hosts - список хостов\n/host <uuid> - детали хоста\n/sub <short_uuid> - подписка\n/tokens - список токенов\n/templates - шаблоны\n/snippets - сниппеты\n/configs - конфиги\n/billing - биллинг\n/providers - провайдеры инфраструктуры",
+    "help": "Доступные команды:\n/start - приветствие\n/help - эта справка\n/health - состояние системы\n/stats - статистика\n/bandwidth - трафик\n/user <username|telegram_id> - найти пользователя\n/user_create <username> <expire_iso> [telegram_id] - создать пользователя\n/nodes - список нод\n/node <uuid> - детали ноды\n/nodes_usage - онлайн-статистика нод\n/nodes_range <start_iso> <end_iso> - трафик за период\n/hosts - список хостов\n/host <uuid> - детали хоста\n/sub <short_uuid> - подписка\n/tokens - список токенов\n/templates - шаблоны\n/snippets - сниппеты\n/configs - конфиги\n/billing - биллинг\n/providers - провайдеры инфраструктуры",
     "menu": "Выберите действие:",
     "user_usage": "Отправь /user <username|telegram_id> чтобы получить данные пользователя."
   },
@@ -12,6 +12,7 @@
     "menu_billing": "Биллинг",
     "menu_bulk": "Массовые операции",
     "menu_system": "Система",
+    "create_user": "Создать пользователя",
     "health": "Здоровье",
     "stats": "Статистика",
     "find_user": "Найти пользователя",
@@ -56,7 +57,10 @@
   },
   "user": {
     "not_found": "Пользователь не найден.",
-    "summary": "Пользователь {username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nТрафик: {used} / {limit}\nТэг: {tag}\nЛимит HWID: {hwid}\nИстекает: {expire}\nОнлайн: {online}"
+    "summary": "Пользователь {username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nТрафик: {used} / {limit}\nТэг: {tag}\nЛимит HWID: {hwid}\nИстекает: {expire}\nОнлайн: {online}",
+    "created": "Пользователь создан:\n{username} ({status})\nUUID: {uuid}\nShort UUID: {shortUuid}\nTG ID: {telegramId}\nИстекает: {expire}\nСсылка подписки: {subscriptionUrl}",
+    "prompt_create": "Отправь: <username> <expire_iso> [telegram_id]. Пример: user1 2025-02-01T00:00:00Z 123456789",
+    "usage_create": "Использование: /user_create <username> <expire_iso> [telegram_id]"
   },
   "node": {
     "usage": "Отправь /node <uuid>, чтобы посмотреть и управлять нодой.",
