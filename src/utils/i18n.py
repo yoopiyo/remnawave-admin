@@ -20,11 +20,11 @@ def get_i18n_middleware() -> I18nMiddleware:
             user = getattr(event, "from_user", None)
             if user:
                 lang = getattr(user, "language_code", None)
-                if lang and self.i18n.is_locale_available(lang):
+                if lang and lang in self.i18n.available_locales:
                     return lang
                 if lang and "-" in lang:
                     base_lang = lang.split("-")[0]
-                    if self.i18n.is_locale_available(base_lang):
+                    if base_lang in self.i18n.available_locales:
                         return base_lang
             return self.i18n.default_locale
 
