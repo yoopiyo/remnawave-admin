@@ -1509,9 +1509,9 @@ async def _send_user_create_prompt(
 async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None:
     squads: list[dict] = []
     try:
-        res = await api_client.get_internal_squads()
-        squads = res.get("response", {}).get("internalSquads", [])
-        logger.info("Loaded %s squads for user_id=%s", len(squads), target.from_user.id)
+        res = await api_client.get_external_squads()
+        squads = res.get("response", {}).get("externalSquads", [])
+        logger.info("Loaded %s external squads for user_id=%s", len(squads), target.from_user.id)
     except UnauthorizedError:
         await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
         return

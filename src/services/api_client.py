@@ -96,6 +96,9 @@ class RemnawaveApiClient:
     async def get_internal_squads(self) -> dict:
         return await self._get("/api/internal-squads")
 
+    async def get_external_squads(self) -> dict:
+        return await self._get("/api/external-squads")
+
     async def create_user(
         self,
         username: str,
