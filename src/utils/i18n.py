@@ -79,4 +79,21 @@ def get_i18n_middleware() -> I18nMiddleware:
                         return base_lang
             return self.i18n.default_locale
 
+        async def __call__(self, handler, event, data):  # type: ignore[override]
+            current_locale = await self.get_locale(event=event, data=data) or self.i18n.default_locale
+
+            if self.i18n_key:
+                data[self.i18n_key] = self.i18n
+            if self.middleware_key:
+                data[self.middleware_key] = self
+
+            base_token = I18n.set_current(self.i18n)
+            self_token = self.i18n.set_current(self.i18n)
+            try:
+                with self.i18n.use_locale(current_locale):
+                    return await handler(event, data)
+            finally:
+                self.i18n.reset_current(self_token)
+                I18n.reset_current(base_token)
+
     return SimpleI18nMiddleware(i18n=i18n)
