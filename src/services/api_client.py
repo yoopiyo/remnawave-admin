@@ -45,6 +45,9 @@ class RemnawaveApiClient:
                 raise NotFoundError from exc
             logger.warning("API error %s on GET %s: %s", status, url, exc.response.text)
             raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            logger.warning("HTTP client error on GET %s: %s", url, exc)
+            raise ApiClientError from exc
 
     async def _post(self, url: str, json: dict | None = None) -> dict:
         try:
@@ -58,6 +61,9 @@ class RemnawaveApiClient:
             if status == 404:
                 raise NotFoundError from exc
             logger.warning("API error %s on POST %s: %s", status, url, exc.response.text)
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            logger.warning("HTTP client error on POST %s: %s", url, exc)
             raise ApiClientError from exc
 
     # --- Settings ---
