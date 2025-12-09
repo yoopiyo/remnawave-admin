@@ -88,13 +88,26 @@ class RemnawaveApiClient:
         return await self._post(f"/api/users/{user_uuid}/actions/revoke")
 
     async def create_user(
-        self, username: str, expire_at: str, telegram_id: int | None = None, traffic_limit_bytes: int | None = None
+        self,
+        username: str,
+        expire_at: str,
+        telegram_id: int | None = None,
+        traffic_limit_bytes: int | None = None,
+        hwid_device_limit: int | None = None,
+        description: str | None = None,
+        external_squad_uuid: str | None = None,
     ) -> dict:
         payload: dict[str, object] = {"username": username, "expireAt": expire_at}
         if telegram_id is not None:
             payload["telegramId"] = telegram_id
         if traffic_limit_bytes is not None:
             payload["trafficLimitBytes"] = traffic_limit_bytes
+        if hwid_device_limit is not None:
+            payload["hwidDeviceLimit"] = hwid_device_limit
+        if description:
+            payload["description"] = description
+        if external_squad_uuid:
+            payload["externalSquadUuid"] = external_squad_uuid
         return await self._post("/api/users", json=payload)
 
     # --- System ---

@@ -1,8 +1,8 @@
 from aiogram import F, Router
-from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
+from datetime import datetime, timedelta
 
 from src.keyboards.main_menu import (
     main_menu_keyboard,
@@ -12,6 +12,15 @@ from src.keyboards.main_menu import (
     resources_menu_keyboard,
     billing_overview_keyboard,
     bulk_menu_keyboard,
+)
+from src.keyboards.user_create import (
+    user_create_description_keyboard,
+    user_create_expire_keyboard,
+    user_create_traffic_keyboard,
+    user_create_hwid_keyboard,
+    user_create_telegram_keyboard,
+    user_create_squad_keyboard,
+    user_create_confirm_keyboard,
 )
 from src.keyboards.host_actions import host_actions_keyboard
 from src.keyboards.node_actions import node_actions_keyboard
@@ -40,6 +49,7 @@ from src.utils.formatters import (
     build_node_summary,
     build_user_summary,
     build_created_user,
+    format_datetime,
     format_bytes,
     format_uptime,
     build_subscription_summary,
@@ -289,10 +299,18 @@ async def cmd_user_create(message: Message) -> None:
         return
 
     parts = message.text.split()
-    if len(parts) < 3:
-        await message.answer(_("user.usage_create"), reply_markup=users_menu_keyboard())
+    if len(parts) >= 3:
+        data = {
+            "username": parts[1],
+            "expire_at": parts[2],
+            "telegram_id": parts[3] if len(parts) > 3 else None,
+        }
+        await _create_user(message, data)
         return
-    await _create_user(message, parts[1], parts[2], parts[3] if len(parts) > 3 else None)
+
+    user_id = message.from_user.id
+    PENDING_INPUT[user_id] = {"action": "user_create", "stage": "username", "data": {}}
+    await _send_user_create_prompt(message, _("user.prompt_username"))
 
 
 @router.message(Command("nodes"))
@@ -474,11 +492,16 @@ async def cb_create_user(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    PENDING_INPUT[callback.from_user.id] = {"action": "user_create"}
-    try:
-        await callback.message.edit_text(_("user.prompt_create"), reply_markup=users_menu_keyboard())
-    except TelegramBadRequest:
-        await callback.message.answer(_("user.prompt_create"), reply_markup=users_menu_keyboard())
+    PENDING_INPUT[callback.from_user.id] = {"action": "user_create", "stage": "username", "data": {}}
+    await _send_user_create_prompt(callback, _("user.prompt_username"))
+
+
+@router.callback_query(F.data.startswith("user_create:"))
+async def cb_user_create_flow(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _handle_user_create_callback(callback)
 
 
 @router.callback_query(F.data == "menu:section:nodes")
@@ -1467,29 +1490,78 @@ async def _fetch_user(query: str) -> dict:
     return await api_client.get_user_by_username(query)
 
 
-async def _create_user(
-    target: Message | CallbackQuery, username: str, expire_at: str, telegram_id_raw: str | None = None
+def _iso_from_days(days: int) -> str:
+    now = datetime.utcnow()
+    return (now + timedelta(days=days)).replace(microsecond=0).isoformat() + "Z"
+
+
+async def _send_user_create_prompt(
+    target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None
 ) -> None:
-    async def _respond(text: str, reply_markup: InlineKeyboardMarkup) -> None:
+    if isinstance(target, CallbackQuery):
+        await target.message.answer(text, reply_markup=reply_markup)
+    else:
+        await target.answer(text, reply_markup=reply_markup)
+
+
+def _build_user_create_preview(data: dict) -> str:
+    expire_at = format_datetime(data.get("expire_at"))
+    traffic_limit = data.get("traffic_limit_bytes")
+    hwid_limit = data.get("hwid_limit")
+    traffic_display = _("user.unlimited") if traffic_limit in (None, 0) else format_bytes(traffic_limit)
+    hwid_display = _("user.unlimited") if not hwid_limit else str(hwid_limit)
+    telegram_id = data.get("telegram_id") or _("user.not_set")
+    description = data.get("description") or _("user.not_set")
+    squad = data.get("squad_uuid") or _("user.no_squad")
+
+    return _(
+        "user.create_preview"
+    ).format(
+        username=data.get("username", "n/a"),
+        expire=expire_at,
+        traffic=traffic_display,
+        hwid=hwid_display,
+        telegramId=telegram_id,
+        description=description,
+        squad=squad,
+    )
+
+
+async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
+    async def _respond(text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text, reply_markup=reply_markup)
+            await target.message.answer(text, reply_markup=reply_markup)
         else:
             await target.answer(text, reply_markup=reply_markup)
 
-    try:
-        telegram_id = int(telegram_id_raw) if telegram_id_raw else None
-    except ValueError:
-        await _respond(_("user.usage_create"), users_menu_keyboard())
+    username = data.get("username")
+    expire_at = data.get("expire_at")
+    if not username or not expire_at:
+        await _respond(_("user.prompt_username"))
         return
 
     try:
-        user = await api_client.create_user(username=username, expire_at=expire_at, telegram_id=telegram_id)
+        telegram_id = int(data["telegram_id"]) if data.get("telegram_id") not in (None, "") else None
+    except (ValueError, TypeError):
+        await _respond(_("user.invalid_telegram"), reply_markup=users_menu_keyboard())
+        return
+
+    try:
+        user = await api_client.create_user(
+            username=username,
+            expire_at=expire_at,
+            telegram_id=telegram_id,
+            traffic_limit_bytes=data.get("traffic_limit_bytes"),
+            hwid_device_limit=data.get("hwid_limit"),
+            description=data.get("description"),
+            external_squad_uuid=data.get("squad_uuid"),
+        )
     except UnauthorizedError:
-        await _respond(_("errors.unauthorized"), users_menu_keyboard())
+        await _respond(_("errors.unauthorized"), reply_markup=users_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("Create user failed")
-        await _respond(_("errors.generic"), users_menu_keyboard())
+        await _respond(_("errors.generic"), reply_markup=users_menu_keyboard())
         return
 
     summary = build_created_user(user, _)
@@ -1500,14 +1572,182 @@ async def _create_user(
 
 
 async def _handle_user_create_input(message: Message, ctx: dict) -> None:
-    parts = message.text.split()
-    if len(parts) < 2:
-        PENDING_INPUT[message.from_user.id] = {"action": "user_create"}
-        await message.answer(_("user.prompt_create"), reply_markup=users_menu_keyboard())
+    user_id = message.from_user.id
+    data = ctx.setdefault("data", {})
+    stage = ctx.get("stage", "username")
+    text = message.text.strip()
+
+    if stage == "username":
+        if not text:
+            await _send_user_create_prompt(message, _("user.prompt_username"))
+            PENDING_INPUT[user_id] = ctx
+            return
+        data["username"] = text.split()[0]
+        ctx["stage"] = "description"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_description"), user_create_description_keyboard())
         return
-    username, expire_at = parts[0], parts[1]
-    telegram_id = parts[2] if len(parts) > 2 else None
-    await _create_user(message, username, expire_at, telegram_id)
+
+    if stage == "description":
+        data["description"] = text
+        ctx["stage"] = "expire"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_expire"), user_create_expire_keyboard())
+        return
+
+    if stage == "expire":
+        try:
+            datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            ctx["stage"] = "expire"
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(
+                message, _("user.invalid_expire"), user_create_expire_keyboard()
+            )
+            return
+        data["expire_at"] = text
+        ctx["stage"] = "traffic"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_traffic"), user_create_traffic_keyboard())
+        return
+
+    if stage == "traffic":
+        try:
+            gb = float(text)
+        except ValueError:
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(message, _("user.invalid_traffic"), user_create_traffic_keyboard())
+            return
+        data["traffic_limit_bytes"] = int(gb * 1024 * 1024 * 1024)
+        ctx["stage"] = "hwid"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_hwid"), user_create_hwid_keyboard())
+        return
+
+    if stage == "hwid":
+        try:
+            hwid = int(text)
+        except ValueError:
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(message, _("user.invalid_hwid"), user_create_hwid_keyboard())
+            return
+        data["hwid_limit"] = hwid
+        ctx["stage"] = "telegram"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_telegram"), user_create_telegram_keyboard())
+        return
+
+    if stage == "telegram":
+        if text:
+            try:
+                data["telegram_id"] = int(text)
+            except ValueError:
+                PENDING_INPUT[user_id] = ctx
+                await _send_user_create_prompt(message, _("user.invalid_telegram"), user_create_telegram_keyboard())
+                return
+        else:
+            data["telegram_id"] = None
+        ctx["stage"] = "squad"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(message, _("user.prompt_squad"), user_create_squad_keyboard())
+        return
+
+    if stage == "squad":
+        data["squad_uuid"] = text or None
+        ctx["stage"] = "confirm"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(
+            message, _build_user_create_preview(data), user_create_confirm_keyboard()
+        )
+        return
+
+    # Default: stay on confirm
+    if ctx.get("stage") == "confirm":
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(
+            message, _build_user_create_preview(data), user_create_confirm_keyboard()
+        )
+
+
+async def _handle_user_create_callback(callback: CallbackQuery) -> None:
+    user_id = callback.from_user.id
+    ctx = PENDING_INPUT.get(user_id, {"action": "user_create", "data": {}, "stage": "username"})
+    data = ctx.setdefault("data", {})
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    action = parts[1]
+
+    if action == "expire" and len(parts) >= 3:
+        try:
+            days = int(parts[2])
+            data["expire_at"] = _iso_from_days(days)
+        except ValueError:
+            pass
+        ctx["stage"] = "traffic"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(callback, _("user.prompt_traffic"), user_create_traffic_keyboard())
+        return
+
+    if action == "traffic" and len(parts) >= 3:
+        value = parts[2]
+        if value == "unlimited":
+            data["traffic_limit_bytes"] = 0
+        else:
+            try:
+                gb = float(value)
+                data["traffic_limit_bytes"] = int(gb * 1024 * 1024 * 1024)
+            except ValueError:
+                data["traffic_limit_bytes"] = None
+        ctx["stage"] = "hwid"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(callback, _("user.prompt_hwid"), user_create_hwid_keyboard())
+        return
+
+    if action == "hwid" and len(parts) >= 3:
+        try:
+            hwid = int(parts[2])
+            data["hwid_limit"] = hwid if hwid > 0 else None
+        except ValueError:
+            data["hwid_limit"] = None
+        ctx["stage"] = "telegram"
+        PENDING_INPUT[user_id] = ctx
+        await _send_user_create_prompt(callback, _("user.prompt_telegram"), user_create_telegram_keyboard())
+        return
+
+    if action == "skip" and len(parts) >= 3:
+        field = parts[2]
+        if field == "description":
+            data["description"] = ""
+            ctx["stage"] = "expire"
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(callback, _("user.prompt_expire"), user_create_expire_keyboard())
+            return
+        if field == "telegram":
+            data["telegram_id"] = None
+            ctx["stage"] = "squad"
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(callback, _("user.prompt_squad"), user_create_squad_keyboard())
+            return
+        if field == "squad":
+            data["squad_uuid"] = None
+            ctx["stage"] = "confirm"
+            PENDING_INPUT[user_id] = ctx
+            await _send_user_create_prompt(callback, _build_user_create_preview(data), user_create_confirm_keyboard())
+            return
+
+    if action == "confirm":
+        try:
+            await _create_user(callback, data)
+            PENDING_INPUT.pop(user_id, None)
+        except Exception:
+            PENDING_INPUT[user_id] = ctx
+            raise
+        return
+
+    if action == "cancel":
+        PENDING_INPUT.pop(user_id, None)
+        await _send_user_create_prompt(callback, _("user.cancelled"), users_menu_keyboard())
 
 
 async def _fetch_health_text() -> str:
