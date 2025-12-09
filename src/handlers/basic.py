@@ -492,6 +492,7 @@ async def cb_create_user(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
+    logger.info("User create flow started by user_id=%s", callback.from_user.id)
     PENDING_INPUT[callback.from_user.id] = {"action": "user_create", "stage": "username", "data": {}}
     await _send_user_create_prompt(callback, _("user.prompt_username"))
 
@@ -501,6 +502,7 @@ async def cb_user_create_flow(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
+    logger.info("User create callback action=%s user_id=%s", callback.data, callback.from_user.id)
     await _handle_user_create_callback(callback)
 
 
@@ -1509,6 +1511,7 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
     try:
         res = await api_client.get_internal_squads()
         squads = res.get("response", {}).get("internalSquads", [])
+        logger.info("Loaded %s squads for user_id=%s", len(squads), target.from_user.id)
     except UnauthorizedError:
         await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
         return
@@ -1565,6 +1568,15 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
         return
 
     try:
+        logger.info(
+            "Creating user username=%s expire_at=%s traffic_bytes=%s hwid=%s telegram_id=%s squad=%s",
+            username,
+            expire_at,
+            data.get("traffic_limit_bytes"),
+            data.get("hwid_limit"),
+            telegram_id,
+            data.get("squad_uuid"),
+        )
         user = await api_client.create_user(
             username=username,
             expire_at=expire_at,
@@ -1594,6 +1606,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
     data = ctx.setdefault("data", {})
     stage = ctx.get("stage", "username")
     text = message.text.strip()
+    logger.info("User create input stage=%s user_id=%s text='%s'", stage, user_id, text)
 
     if stage == "username":
         if not text:
