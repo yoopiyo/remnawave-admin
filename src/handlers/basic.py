@@ -1507,22 +1507,36 @@ async def _send_user_create_prompt(
 
 
 async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None:
+    data = ctx.setdefault("data", {})
     squads: list[dict] = []
+    squad_source = "internal"
     try:
-        res = await api_client.get_external_squads()
-        squads = res.get("response", {}).get("externalSquads", [])
-        logger.info("Loaded %s external squads for user_id=%s", len(squads), target.from_user.id)
+        res = await api_client.get_internal_squads()
+        squads = res.get("response", {}).get("internalSquads", [])
+        logger.info("Loaded %s internal squads for user_id=%s", len(squads), target.from_user.id)
     except UnauthorizedError:
         await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
         return
     except ApiClientError:
-        logger.exception("Failed to load squads")
-        await _send_user_create_prompt(
-            target, _("user.squad_load_failed"), user_create_squad_keyboard([])
-        )
-        return
+        logger.exception("Failed to load internal squads")
     except Exception:
-        logger.exception("Unexpected error while loading squads")
+        logger.exception("Unexpected error while loading internal squads")
+
+    if not squads:
+        try:
+            res = await api_client.get_external_squads()
+            squads = res.get("response", {}).get("externalSquads", [])
+            squad_source = "external"
+            logger.info("Loaded %s external squads for user_id=%s", len(squads), target.from_user.id)
+        except UnauthorizedError:
+            await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
+            return
+        except ApiClientError:
+            logger.exception("Failed to load external squads")
+        except Exception:
+            logger.exception("Unexpected error while loading external squads")
+
+    if not squads:
         await _send_user_create_prompt(
             target, _("user.squad_load_failed"), user_create_squad_keyboard([])
         )
@@ -1531,6 +1545,7 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
     squads_sorted = sorted(squads, key=lambda s: s.get("viewPosition", 0))
     markup = user_create_squad_keyboard(squads_sorted)
     text = _("user.prompt_squad") if squads_sorted else _("user.squad_load_failed")
+    data["squad_source"] = squad_source
     PENDING_INPUT[target.from_user.id] = ctx
     await _send_user_create_prompt(target, text, markup)
 
@@ -1578,14 +1593,20 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
         return
 
     try:
+        squad_uuid = data.get("squad_uuid")
+        squad_source = data.get("squad_source") or "internal"
+        internal_squads = [squad_uuid] if squad_uuid and squad_source != "external" else None
+        external_squad_uuid = squad_uuid if squad_uuid and squad_source == "external" else None
         logger.info(
-            "Creating user username=%s expire_at=%s traffic_bytes=%s hwid=%s telegram_id=%s squad=%s",
+            "Creating user username=%s expire_at=%s traffic_bytes=%s hwid=%s telegram_id=%s squad_source=%s internal_squads=%s external_squad_uuid=%s",
             username,
             expire_at,
             data.get("traffic_limit_bytes"),
             data.get("hwid_limit"),
             telegram_id,
-            data.get("squad_uuid"),
+            squad_source,
+            internal_squads,
+            external_squad_uuid,
         )
         user = await api_client.create_user(
             username=username,
@@ -1594,7 +1615,8 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
             traffic_limit_bytes=data.get("traffic_limit_bytes"),
             hwid_device_limit=data.get("hwid_limit"),
             description=data.get("description"),
-            external_squad_uuid=data.get("squad_uuid"),
+            external_squad_uuid=external_squad_uuid,
+            active_internal_squads=internal_squads,
         )
     except UnauthorizedError:
         await _respond(_("errors.unauthorized"), reply_markup=users_menu_keyboard())

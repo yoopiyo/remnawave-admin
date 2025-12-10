@@ -108,6 +108,7 @@ class RemnawaveApiClient:
         hwid_device_limit: int | None = None,
         description: str | None = None,
         external_squad_uuid: str | None = None,
+        active_internal_squads: list[str] | None = None,
     ) -> dict:
         payload: dict[str, object] = {"username": username, "expireAt": expire_at}
         if telegram_id is not None:
@@ -120,6 +121,8 @@ class RemnawaveApiClient:
             payload["description"] = description
         if external_squad_uuid:
             payload["externalSquadUuid"] = external_squad_uuid
+        if active_internal_squads:
+            payload["activeInternalSquads"] = active_internal_squads
         return await self._post("/api/users", json=payload)
 
     # --- System ---
