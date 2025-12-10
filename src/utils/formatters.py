@@ -1,8 +1,11 @@
 ﻿from datetime import datetime
 from typing import Any, Callable
+import html
 
 
 NA = "n/a"
+def _esc(value: Any) -> str:
+    return html.escape("" if value is None else str(value))
 
 
 def format_bytes(value: float | int | None) -> str:
@@ -62,19 +65,19 @@ def build_user_summary(user: dict, t: Callable[[str], str]) -> str:
     }.get(status, "⚙️")
 
     return t("user.summary").format(
-        username=info.get("username", NA),
-        status=status,
+        username=_esc(info.get("username", NA)),
+        status=_esc(status),
         statusEmoji=status_emoji,
-        uuid=info.get("uuid", NA),
-        shortUuid=info.get("shortUuid", NA),
-        telegramId=info.get("telegramId", NA),
-        subscriptionUrl=subscription_url,
-        used=format_bytes(used),
-        limit=format_bytes(limit),
-        hwid=hwid_limit,
-        expire=expire_at,
-        online=last_online,
-        created=created_at,
+        uuid=_esc(info.get("uuid", NA)),
+        shortUuid=_esc(info.get("shortUuid", NA)),
+        telegramId=_esc(info.get("telegramId", NA)),
+        subscriptionUrl=_esc(subscription_url),
+        used=_esc(format_bytes(used)),
+        limit=_esc(format_bytes(limit)),
+        hwid=_esc(hwid_limit),
+        expire=_esc(expire_at),
+        online=_esc(last_online),
+        created=_esc(created_at),
     )
 
 

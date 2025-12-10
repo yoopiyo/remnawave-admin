@@ -1252,10 +1252,10 @@ async def _send_user_summary(target: Message | CallbackQuery, user: dict, back_t
     reply_markup = user_actions_keyboard(uuid, status, back_to=back_to)
     user_id = None
     if isinstance(target, CallbackQuery):
-        await target.message.edit_text(summary, reply_markup=reply_markup)
+        await target.message.edit_text(summary, reply_markup=reply_markup, parse_mode="HTML")
         user_id = target.from_user.id
     else:
-        await _send_clean_message(target, summary, reply_markup=reply_markup)
+        await _send_clean_message(target, summary, reply_markup=reply_markup, parse_mode="HTML")
         user_id = target.from_user.id if getattr(target, "from_user", None) else None
     if user_id is not None:
         _store_user_detail_back_target(user_id, back_to)
@@ -2744,7 +2744,10 @@ async def _show_tokens(
     else:
         await _send_clean_message(target, text, reply_markup=markup)
 async def _send_clean_message(
-    target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None
+    target: Message | CallbackQuery,
+    text: str,
+    reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: str | None = None,
 ) -> Message:
     msg = target.message if isinstance(target, CallbackQuery) else target
     bot = msg.bot
@@ -2754,7 +2757,7 @@ async def _send_clean_message(
     if prev_id:
         try:
             edited = await bot.edit_message_text(
-                chat_id=chat_id, message_id=prev_id, text=text, reply_markup=reply_markup
+                chat_id=chat_id, message_id=prev_id, text=text, reply_markup=reply_markup, parse_mode=parse_mode
             )
             return edited
         except Exception:
@@ -2763,6 +2766,6 @@ async def _send_clean_message(
             except Exception:
                 pass
 
-    sent = await msg.answer(text, reply_markup=reply_markup)
+    sent = await msg.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
     LAST_BOT_MESSAGES[chat_id] = sent.message_id
     return sent
