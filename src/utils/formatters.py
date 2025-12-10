@@ -50,22 +50,31 @@ def build_user_summary(user: dict, t: Callable[[str], str]) -> str:
     expire_at = format_datetime(info.get("expireAt"))
     used = info.get("userTraffic", {}).get("usedTrafficBytes", 0)
     limit = info.get("trafficLimitBytes")
-    tag = info.get("tag") or NA
     hwid_limit = info.get("hwidDeviceLimit", NA)
     last_online = format_datetime(info.get("userTraffic", {}).get("onlineAt"))
+    created_at = format_datetime(info.get("createdAt"))
+    subscription_url = info.get("subscriptionUrl") or NA
+    status_emoji = {
+        "ACTIVE": "🟢",
+        "DISABLED": "⚪",
+        "LIMITED": "🟠",
+        "EXPIRED": "🔴",
+    }.get(status, "⚙️")
 
     return t("user.summary").format(
-        username=info.get("username", "n/a"),
+        username=info.get("username", NA),
         status=status,
-        uuid=info.get("uuid", "n/a"),
-        shortUuid=info.get("shortUuid", "n/a"),
+        statusEmoji=status_emoji,
+        uuid=info.get("uuid", NA),
+        shortUuid=info.get("shortUuid", NA),
         telegramId=info.get("telegramId", NA),
+        subscriptionUrl=subscription_url,
         used=format_bytes(used),
         limit=format_bytes(limit),
-        tag=tag,
         hwid=hwid_limit,
         expire=expire_at,
         online=last_online,
+        created=created_at,
     )
 
 

@@ -57,7 +57,7 @@
   },
   "user": {
     "not_found": "🙅 User not found.",
-    "summary": "🧑 User {username} • {status}\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n💬 TG: {telegramId}\n📶 Traffic: {used} / {limit}\n🏷 Tag: {tag}\n💻 HWID: {hwid}\n⏳ Expires: {expire}\n🟢 Online: {online}",
+    "summary": "👤 {username}\n{statusEmoji} Status: {status}\n💬 TG ID: `{telegramId}`\n🔗 Subscription: {subscriptionUrl}\n\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n\n📶 Traffic: {used} / {limit}\n⏳ Expires: {expire}\n💻 HWID: {hwid}\n📳 Last online: {online}\n📅 Created: {created}",
     "created": "✅ User created\n👤 {username} ({status})\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n💬 TG: {telegramId}\n⏳ Expires: {expire}\n🔗 Subscription: {subscriptionUrl}",
     "prompt_username": "🆕 Enter username (letters/numbers/hyphen).",
     "prompt_description": "📝 Add a description/label or tap “Skip”.",
@@ -96,7 +96,9 @@
     "search_prompt": "🔎 Enter username, email, Telegram ID, or description to search.",
     "search_no_results": "No matches for \"{query}\". Try again or use the buttons below.",
     "search_results": "Found {count} match(es) for \"{query}\". Choose a user or send a new query.",
-    "search_results_limited": "Showing first {shown} of {total} results."
+    "search_results_limited": "Showing first {shown} of {total} results.",
+    "configs_button": "Configs",
+    "configs_title": "🧩 Configs available: {count}"
   },
   "node": {
     "usage": "🛰 Send /node <uuid> to view and manage a node.",

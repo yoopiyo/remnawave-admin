@@ -13,7 +13,10 @@ def user_actions_keyboard(user_uuid: str, status: str, back_to: str = NavTarget.
                 InlineKeyboardButton(text=toggle_text, callback_data=f"user:{user_uuid}:{toggle_action}"),
                 InlineKeyboardButton(text=_("actions.reset_traffic"), callback_data=f"user:{user_uuid}:reset"),
             ],
-            [InlineKeyboardButton(text=_("actions.revoke"), callback_data=f"user:{user_uuid}:revoke")],
+            [
+                InlineKeyboardButton(text=_("actions.revoke"), callback_data=f"user:{user_uuid}:revoke"),
+                InlineKeyboardButton(text=_("user.configs_button"), callback_data=f"user_configs:{user_uuid}"),
+            ],
             nav_row(back_to),
         ]
     )

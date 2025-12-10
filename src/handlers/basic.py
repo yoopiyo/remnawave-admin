@@ -851,6 +851,25 @@ async def cb_subs_view(callback: CallbackQuery) -> None:
     await _send_user_summary(callback, user, back_to=back_to)
 
 
+@router.callback_query(F.data.startswith("user_configs:"))
+async def cb_user_configs(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    _, user_uuid = callback.data.split(":")
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    try:
+        data = await api_client.get_config_profiles()
+        profiles = data.get("response", {}).get("configProfiles", [])
+        text = _("user.configs_title").format(count=len(profiles)) + "\n" + build_config_profiles_list(profiles, _)
+    except UnauthorizedError:
+        text = _("errors.unauthorized")
+    except ApiClientError:
+        logger.exception("Failed to fetch configs for user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        text = _("errors.generic")
+    await callback.message.edit_text(text, reply_markup=nav_keyboard(back_to))
+
+
 @router.callback_query(F.data == "menu:back")
 async def cb_back(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
