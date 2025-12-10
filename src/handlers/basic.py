@@ -73,9 +73,10 @@ from src.utils.logger import logger
 
 router = Router(name="basic")
 PENDING_INPUT: dict[int, dict] = {}
+LAST_BOT_MESSAGES: dict[int, int] = {}
 
 
-async def _cleanup_message(message: Message, delay: float = 2.0) -> None:
+async def _cleanup_message(message: Message, delay: float = 0.0) -> None:
     if not isinstance(message, Message):
         return
     try:
@@ -110,8 +111,8 @@ async def cmd_start(message: Message) -> None:
     if await _not_admin(message):
         return
 
-    await message.answer(_("bot.welcome"))
-    await message.answer(_("bot.menu"), reply_markup=main_menu_keyboard())
+    await _send_clean_message(message, _("bot.welcome"))
+    await _send_clean_message(message, _("bot.menu"), reply_markup=main_menu_keyboard())
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -150,21 +151,21 @@ async def cmd_help(message: Message) -> None:
     if await _not_admin(message):
         return
 
-    await message.answer(_("bot.help"))
+    await _send_clean_message(message, _("bot.help"))
 
 
 @router.message(Command("health"))
 async def cmd_health(message: Message) -> None:
     if await _not_admin(message):
         return
-    await message.answer(await _fetch_health_text(), reply_markup=system_menu_keyboard())
+    await _send_clean_message(message, await _fetch_health_text(), reply_markup=system_menu_keyboard())
 
 
 @router.message(Command("stats"))
 async def cmd_stats(message: Message) -> None:
     if await _not_admin(message):
         return
-    await message.answer(await _fetch_stats_text(), reply_markup=system_menu_keyboard())
+    await _send_clean_message(message, await _fetch_stats_text(), reply_markup=system_menu_keyboard())
 
 
 @router.message(Command("bandwidth"))
@@ -172,7 +173,7 @@ async def cmd_bandwidth(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_bandwidth_text()
-    await message.answer(text, reply_markup=system_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=system_menu_keyboard())
 
 
 @router.message(Command("billing"))
@@ -180,7 +181,7 @@ async def cmd_billing(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_billing_text()
-    await message.answer(text, reply_markup=billing_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=billing_menu_keyboard())
 
 
 @router.message(Command("providers"))
@@ -188,7 +189,7 @@ async def cmd_providers(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_providers_text()
-    await message.answer(text, reply_markup=providers_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=providers_menu_keyboard())
 
 
 @router.message(Command("billing_nodes"))
@@ -196,14 +197,14 @@ async def cmd_billing_nodes(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_billing_nodes_text()
-    await message.answer(text, reply_markup=billing_nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=billing_nodes_menu_keyboard())
 
 
 @router.message(Command("bulk"))
 async def cmd_bulk(message: Message) -> None:
     if await _not_admin(message):
         return
-    await message.answer(_("bulk.title"), reply_markup=bulk_menu_keyboard())
+    await _send_clean_message(message, _("bulk.title"), reply_markup=bulk_menu_keyboard())
 
 
 @router.message(Command("bulk_delete_status"))
@@ -212,7 +213,7 @@ async def cmd_bulk_delete_status(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("bulk.usage_delete_status"))
+        await _send_clean_message(message, _("bulk.usage_delete_status"))
         return
     status = parts[1].strip()
     await _run_bulk_action(message, action="delete_status", status=status)
@@ -224,7 +225,7 @@ async def cmd_bulk_delete(message: Message) -> None:
         return
     uuids = _parse_uuids(message.text, expected_min=1)
     if not uuids:
-        await message.answer(_("bulk.usage_delete"))
+        await _send_clean_message(message, _("bulk.usage_delete"))
         return
     await _run_bulk_action(message, action="delete", uuids=uuids)
 
@@ -235,7 +236,7 @@ async def cmd_bulk_revoke(message: Message) -> None:
         return
     uuids = _parse_uuids(message.text, expected_min=1)
     if not uuids:
-        await message.answer(_("bulk.usage_revoke"))
+        await _send_clean_message(message, _("bulk.usage_revoke"))
         return
     await _run_bulk_action(message, action="revoke", uuids=uuids)
 
@@ -246,7 +247,7 @@ async def cmd_bulk_reset(message: Message) -> None:
         return
     uuids = _parse_uuids(message.text, expected_min=1)
     if not uuids:
-        await message.answer(_("bulk.usage_reset"))
+        await _send_clean_message(message, _("bulk.usage_reset"))
         return
     await _run_bulk_action(message, action="reset", uuids=uuids)
 
@@ -257,16 +258,16 @@ async def cmd_bulk_extend(message: Message) -> None:
         return
     parts = message.text.split()
     if len(parts) < 3:
-        await message.answer(_("bulk.usage_extend"))
+        await _send_clean_message(message, _("bulk.usage_extend"))
         return
     try:
         days = int(parts[1])
     except ValueError:
-        await message.answer(_("bulk.usage_extend"))
+        await _send_clean_message(message, _("bulk.usage_extend"))
         return
     uuids = parts[2:]
     if not uuids:
-        await message.answer(_("bulk.usage_extend"))
+        await _send_clean_message(message, _("bulk.usage_extend"))
         return
     await _run_bulk_action(message, action="extend", uuids=uuids, days=days)
 
@@ -277,12 +278,12 @@ async def cmd_bulk_extend_all(message: Message) -> None:
         return
     parts = message.text.split()
     if len(parts) != 2:
-        await message.answer(_("bulk.usage_extend_all"))
+        await _send_clean_message(message, _("bulk.usage_extend_all"))
         return
     try:
         days = int(parts[1])
     except ValueError:
-        await message.answer(_("bulk.usage_extend_all"))
+        await _send_clean_message(message, _("bulk.usage_extend_all"))
         return
     await _run_bulk_action(message, action="extend_all", days=days)
 
@@ -293,7 +294,7 @@ async def cmd_bulk_status(message: Message) -> None:
         return
     parts = message.text.split()
     if len(parts) < 3:
-        await message.answer(_("bulk.usage_status"))
+        await _send_clean_message(message, _("bulk.usage_status"))
         return
     status = parts[1]
     uuids = parts[2:]
@@ -307,7 +308,7 @@ async def cmd_user(message: Message) -> None:
 
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("bot.user_usage"))
+        await _send_clean_message(message, _("bot.user_usage"))
         return
     query = parts[1].strip()
     await _send_user_detail(message, query)
@@ -339,7 +340,7 @@ async def cmd_nodes(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_nodes_text()
-    await message.answer(text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
 
 
 @router.message(Command("nodes_usage"))
@@ -356,11 +357,11 @@ async def cmd_nodes_range(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=2)
     if len(parts) < 3:
-        await message.answer(_("node_stats.usage_range_usage"))
+        await _send_clean_message(message, _("node_stats.usage_range_usage"))
         return
     start, end = parts[1], parts[2]
     text = await _fetch_nodes_range_text(start, end)
-    await message.answer(text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
 
 
 @router.message(Command("node"))
@@ -369,7 +370,7 @@ async def cmd_node(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("node.usage"))
+        await _send_clean_message(message, _("node.usage"))
         return
     node_uuid = parts[1].strip()
     await _send_node_detail(message, node_uuid)
@@ -380,7 +381,7 @@ async def cmd_hosts(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_hosts_text()
-    await message.answer(text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
 
 
 @router.message(Command("host"))
@@ -389,7 +390,7 @@ async def cmd_host(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("host.usage"))
+        await _send_clean_message(message, _("host.usage"))
         return
     host_uuid = parts[1].strip()
     await _send_host_detail(message, host_uuid)
@@ -401,7 +402,7 @@ async def cmd_sub(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("sub.usage"))
+        await _send_clean_message(message, _("sub.usage"))
         return
     short_uuid = parts[1].strip()
     await _send_subscription_detail(message, short_uuid)
@@ -420,7 +421,7 @@ async def cmd_token_create(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("token.usage"))
+        await _send_clean_message(message, _("token.usage"))
         return
     name = parts[1].strip()
     await _create_token(message, name)
@@ -431,7 +432,7 @@ async def cmd_templates(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_templates_text()
-    await message.answer(text, reply_markup=template_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=template_menu_keyboard())
 
 
 @router.message(Command("template"))
@@ -440,7 +441,7 @@ async def cmd_template(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("template.usage"))
+        await _send_clean_message(message, _("template.usage"))
         return
     tpl_uuid = parts[1].strip()
     await _send_template_detail(message, tpl_uuid)
@@ -451,7 +452,7 @@ async def cmd_snippets(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_snippets_text()
-    await message.answer(text, reply_markup=resources_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=resources_menu_keyboard())
 
 
 @router.message(Command("snippet"))
@@ -460,7 +461,7 @@ async def cmd_snippet(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("snippet.usage"))
+        await _send_clean_message(message, _("snippet.usage"))
         return
     name = parts[1].strip()
     await _send_snippet_detail(message, name)
@@ -485,7 +486,7 @@ async def cmd_configs(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_configs_text()
-    await message.answer(text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
 
 
 @router.message(Command("config"))
@@ -494,7 +495,7 @@ async def cmd_config(message: Message) -> None:
         return
     parts = message.text.split(maxsplit=1)
     if len(parts) < 2:
-        await message.answer(_("config.usage"))
+        await _send_clean_message(message, _("config.usage"))
         return
     config_uuid = parts[1].strip()
     await _send_config_detail(message, config_uuid)
@@ -1105,14 +1106,14 @@ async def _send_user_detail(target: Message | CallbackQuery, query: str) -> None
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("user.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching user query=%s", query)
@@ -1120,7 +1121,7 @@ async def _send_user_detail(target: Message | CallbackQuery, query: str) -> None
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_user_summary(user, _)
@@ -1130,7 +1131,7 @@ async def _send_user_detail(target: Message | CallbackQuery, query: str) -> None
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=reply_markup)
     else:
-        await target.answer(summary, reply_markup=reply_markup)
+        await _send_clean_message(target, summary, reply_markup=reply_markup)
 
 
 async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, from_callback: bool = False) -> None:
@@ -1141,14 +1142,14 @@ async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, fro
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("node.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching node node_uuid=%s", node_uuid)
@@ -1156,7 +1157,7 @@ async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, fro
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     info = node.get("response", node)
@@ -1167,7 +1168,7 @@ async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, fro
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _send_host_detail(target: Message | CallbackQuery, host_uuid: str, from_callback: bool = False) -> None:
@@ -1178,14 +1179,14 @@ async def _send_host_detail(target: Message | CallbackQuery, host_uuid: str, fro
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("host.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching host host_uuid=%s", host_uuid)
@@ -1193,7 +1194,7 @@ async def _send_host_detail(target: Message | CallbackQuery, host_uuid: str, fro
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     info = host.get("response", host)
@@ -1204,7 +1205,7 @@ async def _send_host_detail(target: Message | CallbackQuery, host_uuid: str, fro
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _send_subscription_detail(target: Message | CallbackQuery, short_uuid: str) -> None:
@@ -1215,14 +1216,14 @@ async def _send_subscription_detail(target: Message | CallbackQuery, short_uuid:
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("sub.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching subscription short_uuid=%s", short_uuid)
@@ -1230,7 +1231,7 @@ async def _send_subscription_detail(target: Message | CallbackQuery, short_uuid:
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_subscription_summary(sub, _)
@@ -1239,7 +1240,7 @@ async def _send_subscription_detail(target: Message | CallbackQuery, short_uuid:
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _send_template_detail(target: Message | CallbackQuery, tpl_uuid: str) -> None:
@@ -2332,3 +2333,30 @@ async def _show_tokens(
             await send(line, reply_markup=token_actions_keyboard(uuid))
     except Exception:
         logger.exception("⚠️ Failed to send token buttons")
+async def _send_clean_message(
+    target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None
+) -> Message:
+    if isinstance(target, CallbackQuery):
+        msg = target.message
+        bot = msg.bot
+        chat_id = msg.chat.id
+        try:
+            await msg.edit_text(text, reply_markup=reply_markup)
+            return msg
+        except Exception:
+            pass
+    else:
+        msg = target
+        bot = msg.bot
+        chat_id = msg.chat.id
+
+    prev_id = LAST_BOT_MESSAGES.pop(chat_id, None)
+    if prev_id:
+        try:
+            await bot.delete_message(chat_id=chat_id, message_id=prev_id)
+        except Exception:
+            pass
+
+    sent = await msg.answer(text, reply_markup=reply_markup)
+    LAST_BOT_MESSAGES[chat_id] = sent.message_id
+    return sent
