@@ -99,7 +99,7 @@ async def _not_admin(message: Message | CallbackQuery) -> bool:
         if isinstance(message, CallbackQuery):
             await message.answer(text, show_alert=True)
         else:
-            await message.answer(text)
+            await _send_clean_message(message, text)
         return True
     if isinstance(message, Message):
         asyncio.create_task(_cleanup_message(message))
@@ -143,7 +143,7 @@ async def handle_pending(message: Message) -> None:
     elif action == "user_create":
         await _handle_user_create_input(message, ctx)
     else:
-        await message.answer(_("errors.generic"))
+        await _send_clean_message(message, _("errors.generic"))
 
 
 @router.message(Command("help"))
@@ -348,7 +348,7 @@ async def cmd_nodes_usage(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_nodes_realtime_text()
-    await message.answer(text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
 
 
 @router.message(Command("nodes_range"))
@@ -1082,7 +1082,7 @@ async def _reply(target: Message | CallbackQuery, text: str, back: bool = False)
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(text, reply_markup=markup)
     else:
-        await target.answer(text, reply_markup=markup)
+        await _send_clean_message(target, text, reply_markup=markup)
 
 
 @router.callback_query(F.data.startswith("config:"))
@@ -1251,14 +1251,14 @@ async def _send_template_detail(target: Message | CallbackQuery, tpl_uuid: str) 
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("template.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching template")
@@ -1266,7 +1266,7 @@ async def _send_template_detail(target: Message | CallbackQuery, tpl_uuid: str) 
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_template_summary(tpl, _)
@@ -1274,27 +1274,27 @@ async def _send_template_detail(target: Message | CallbackQuery, tpl_uuid: str) 
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _handle_template_create_input(message: Message, ctx: dict) -> None:
     parts = message.text.split(maxsplit=1)
     if len(parts) != 2:
-        await message.answer(_("template.prompt_create"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.prompt_create"), reply_markup=template_menu_keyboard())
         return
     name, tpl_type = parts[0], parts[1].strip().upper()
     allowed = {"XRAY_JSON", "XRAY_BASE64", "MIHOMO", "STASH", "CLASH", "SINGBOX"}
     if tpl_type not in allowed:
-        await message.answer(_("template.invalid_type"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.invalid_type"), reply_markup=template_menu_keyboard())
         return
     try:
         await api_client.create_template(name, tpl_type)
-        await message.answer(_("template.created"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.created"), reply_markup=template_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=template_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Template create failed")
-        await message.answer(_("template.invalid_payload"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.invalid_payload"), reply_markup=template_menu_keyboard())
 
 
 async def _handle_template_update_json_input(message: Message, ctx: dict) -> None:
@@ -1304,31 +1304,31 @@ async def _handle_template_update_json_input(message: Message, ctx: dict) -> Non
 
         payload = json.loads(message.text)
     except Exception:
-        await message.answer(_("template.invalid_payload"), reply_markup=template_actions_keyboard(tpl_uuid))
+        await _send_clean_message(message, _("template.invalid_payload"), reply_markup=template_actions_keyboard(tpl_uuid))
         return
     try:
         await api_client.update_template(tpl_uuid, template_json=payload)
-        await message.answer(_("template.updated"), reply_markup=template_actions_keyboard(tpl_uuid))
+        await _send_clean_message(message, _("template.updated"), reply_markup=template_actions_keyboard(tpl_uuid))
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=template_actions_keyboard(tpl_uuid))
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=template_actions_keyboard(tpl_uuid))
     except ApiClientError:
         logger.exception("❌ Template update failed")
-        await message.answer(_("template.invalid_payload"), reply_markup=template_actions_keyboard(tpl_uuid))
+        await _send_clean_message(message, _("template.invalid_payload"), reply_markup=template_actions_keyboard(tpl_uuid))
 
 
 async def _handle_template_reorder_input(message: Message, ctx: dict) -> None:
     uuids = message.text.split()
     if not uuids:
-        await message.answer(_("template.prompt_reorder"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.prompt_reorder"), reply_markup=template_menu_keyboard())
         return
     try:
         await api_client.reorder_templates(uuids)
-        await message.answer(_("template.reordered"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.reordered"), reply_markup=template_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=template_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Template reorder failed")
-        await message.answer(_("template.invalid_payload"), reply_markup=template_menu_keyboard())
+        await _send_clean_message(message, _("template.invalid_payload"), reply_markup=template_menu_keyboard())
 
 
 async def _handle_provider_input(message: Message, ctx: dict) -> None:
@@ -1342,7 +1342,7 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
             favicon = parts[1] if len(parts) > 1 else None
             login = parts[2] if len(parts) > 2 else None
             await api_client.create_infra_provider(name=name, favicon_link=favicon, login_url=login)
-            await message.answer(_("provider.created"), reply_markup=providers_menu_keyboard())
+            await _send_clean_message(message, _("provider.created"), reply_markup=providers_menu_keyboard())
         elif action == "provider_update":
             if len(parts) < 2:
                 raise ValueError
@@ -1351,25 +1351,25 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
             favicon = parts[2] if len(parts) > 2 and parts[2] != "-" else None
             login = parts[3] if len(parts) > 3 and parts[3] != "-" else None
             await api_client.update_infra_provider(provider_uuid, name=name, favicon_link=favicon, login_url=login)
-            await message.answer(_("provider.updated"), reply_markup=providers_menu_keyboard())
+            await _send_clean_message(message, _("provider.updated"), reply_markup=providers_menu_keyboard())
         elif action == "provider_delete":
             if len(parts) != 1:
                 raise ValueError
             await api_client.delete_infra_provider(parts[0])
-            await message.answer(_("provider.deleted"), reply_markup=providers_menu_keyboard())
+            await _send_clean_message(message, _("provider.deleted"), reply_markup=providers_menu_keyboard())
         else:
-            await message.answer(_("errors.generic"), reply_markup=providers_menu_keyboard())
+            await _send_clean_message(message, _("errors.generic"), reply_markup=providers_menu_keyboard())
             return
     except ValueError:
         prompt_key = "provider.prompt_create" if action == "provider_create" else (
             "provider.prompt_update" if action == "provider_update" else "provider.prompt_delete"
         )
-        await message.answer(_(prompt_key), reply_markup=providers_menu_keyboard())
+        await _send_clean_message(message, _(prompt_key), reply_markup=providers_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=providers_menu_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=providers_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Provider action failed: %s", action)
-        await message.answer(_("provider.invalid"), reply_markup=providers_menu_keyboard())
+        await _send_clean_message(message, _("provider.invalid"), reply_markup=providers_menu_keyboard())
 
 
 async def _handle_billing_history_input(message: Message, ctx: dict) -> None:
@@ -1383,23 +1383,23 @@ async def _handle_billing_history_input(message: Message, ctx: dict) -> None:
             amount = float(parts[1])
             billed_at = parts[2]
             await api_client.create_infra_billing_record(provider_uuid, amount, billed_at)
-            await message.answer(_("billing.done"), reply_markup=billing_menu_keyboard())
+            await _send_clean_message(message, _("billing.done"), reply_markup=billing_menu_keyboard())
         elif action == "billing_history_delete":
             if len(parts) != 1:
                 raise ValueError
             await api_client.delete_infra_billing_record(parts[0])
-            await message.answer(_("billing.deleted"), reply_markup=billing_menu_keyboard())
+            await _send_clean_message(message, _("billing.deleted"), reply_markup=billing_menu_keyboard())
         else:
-            await message.answer(_("errors.generic"), reply_markup=billing_menu_keyboard())
+            await _send_clean_message(message, _("errors.generic"), reply_markup=billing_menu_keyboard())
             return
     except ValueError:
         prompt_key = "billing.prompt_create" if action == "billing_history_create" else "billing.prompt_delete"
-        await message.answer(_(prompt_key), reply_markup=billing_menu_keyboard())
+        await _send_clean_message(message, _(prompt_key), reply_markup=billing_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=billing_menu_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=billing_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Billing history action failed: %s", action)
-        await message.answer(_("billing.invalid"), reply_markup=billing_menu_keyboard())
+        await _send_clean_message(message, _("billing.invalid"), reply_markup=billing_menu_keyboard())
 
 
 async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
@@ -1412,21 +1412,21 @@ async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
             provider_uuid, node_uuid = parts[0], parts[1]
             next_billing_at = parts[2] if len(parts) > 2 else None
             await api_client.create_infra_billing_node(provider_uuid, node_uuid, next_billing_at)
-            await message.answer(_("billing_nodes.done"), reply_markup=billing_nodes_menu_keyboard())
+            await _send_clean_message(message, _("billing_nodes.done"), reply_markup=billing_nodes_menu_keyboard())
         elif action == "billing_nodes_update":
             if len(parts) < 2:
                 raise ValueError
             next_billing_at = parts[0]
             uuids = parts[1:]
             await api_client.update_infra_billing_nodes(uuids, next_billing_at)
-            await message.answer(_("billing_nodes.done"), reply_markup=billing_nodes_menu_keyboard())
+            await _send_clean_message(message, _("billing_nodes.done"), reply_markup=billing_nodes_menu_keyboard())
         elif action == "billing_nodes_delete":
             if len(parts) != 1:
                 raise ValueError
             await api_client.delete_infra_billing_node(parts[0])
-            await message.answer(_("billing_nodes.deleted"), reply_markup=billing_nodes_menu_keyboard())
+            await _send_clean_message(message, _("billing_nodes.deleted"), reply_markup=billing_nodes_menu_keyboard())
         else:
-            await message.answer(_("errors.generic"), reply_markup=billing_nodes_menu_keyboard())
+            await _send_clean_message(message, _("errors.generic"), reply_markup=billing_nodes_menu_keyboard())
             return
     except ValueError:
         prompt_map = {
@@ -1434,12 +1434,12 @@ async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
             "billing_nodes_update": _("billing_nodes.prompt_update"),
             "billing_nodes_delete": _("billing_nodes.prompt_delete"),
         }
-        await message.answer(prompt_map.get(action, _("errors.generic")), reply_markup=billing_nodes_menu_keyboard())
+        await _send_clean_message(message, prompt_map.get(action, _("errors.generic")), reply_markup=billing_nodes_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=billing_nodes_menu_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=billing_nodes_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Billing nodes action failed: %s", action)
-        await message.answer(_("billing_nodes.invalid"), reply_markup=billing_nodes_menu_keyboard())
+        await _send_clean_message(message, _("billing_nodes.invalid"), reply_markup=billing_nodes_menu_keyboard())
 
 
 async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
@@ -1450,7 +1450,7 @@ async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
         parts = message.text.split()
         if len(parts) < 2:
             PENDING_INPUT[user_id] = {"action": "bulk_nodes_profile", "stage": "profile"}
-            await message.answer(_("bulk_nodes.prompt_profile"), reply_markup=bulk_nodes_keyboard())
+            await _send_clean_message(message, _("bulk_nodes.prompt_profile"), reply_markup=bulk_nodes_keyboard())
             return
         profile_uuid, inbound_uuids = parts[0], parts[1:]
         PENDING_INPUT[user_id] = {
@@ -1459,7 +1459,7 @@ async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
             "profile_uuid": profile_uuid,
             "inbound_uuids": inbound_uuids,
         }
-        await message.answer(_("bulk_nodes.prompt_nodes"), reply_markup=bulk_nodes_keyboard())
+        await _send_clean_message(message, _("bulk_nodes.prompt_nodes"), reply_markup=bulk_nodes_keyboard())
         return
 
     node_uuids = message.text.split()
@@ -1470,26 +1470,26 @@ async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
             "profile_uuid": ctx.get("profile_uuid"),
             "inbound_uuids": ctx.get("inbound_uuids", []),
         }
-        await message.answer(_("bulk_nodes.prompt_nodes"), reply_markup=bulk_nodes_keyboard())
+        await _send_clean_message(message, _("bulk_nodes.prompt_nodes"), reply_markup=bulk_nodes_keyboard())
         return
 
     try:
         await api_client.bulk_nodes_profile_modification(
             node_uuids, ctx.get("profile_uuid", ""), ctx.get("inbound_uuids", [])
         )
-        await message.answer(_("bulk_nodes.done"), reply_markup=main_menu_keyboard())
+        await _send_clean_message(message, _("bulk_nodes.done"), reply_markup=main_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=bulk_nodes_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=bulk_nodes_keyboard())
     except ApiClientError:
         logger.exception("❌ Bulk nodes action failed")
-        await message.answer(_("errors.generic"), reply_markup=bulk_nodes_keyboard())
+        await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_nodes_keyboard())
 
 
 async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
     action = ctx.get("action", "")
     uuids = message.text.split()
     if not uuids:
-        await message.answer(_("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
+        await _send_clean_message(message, _("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
         return
     try:
         if action == "bulk_hosts_enable":
@@ -1499,14 +1499,14 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
         elif action == "bulk_hosts_delete":
             await api_client.bulk_delete_hosts(uuids)
         else:
-            await message.answer(_("errors.generic"), reply_markup=bulk_hosts_keyboard())
+            await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
             return
-        await message.answer(_("bulk_hosts.done"), reply_markup=main_menu_keyboard())
+        await _send_clean_message(message, _("bulk_hosts.done"), reply_markup=main_menu_keyboard())
     except UnauthorizedError:
-        await message.answer(_("errors.unauthorized"), reply_markup=bulk_hosts_keyboard())
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=bulk_hosts_keyboard())
     except ApiClientError:
         logger.exception("❌ Bulk hosts action failed")
-        await message.answer(_("errors.generic"), reply_markup=bulk_hosts_keyboard())
+        await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
 
 
 async def _fetch_user(query: str) -> dict:
@@ -1565,10 +1565,7 @@ async def _send_user_create_prompt(
                 pass
             ctx.pop("bot_message_id", None)
 
-    if isinstance(target, CallbackQuery):
-        sent = await target.message.answer(text, reply_markup=reply_markup)
-    else:
-        sent = await target.answer(text, reply_markup=reply_markup)
+    sent = await _send_clean_message(target, text, reply_markup=reply_markup)
 
     if ctx is not None:
         ctx["bot_message_id"] = sent.message_id
@@ -1650,10 +1647,7 @@ def _build_user_create_preview(data: dict) -> str:
 
 async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
     async def _respond(text: str, reply_markup: InlineKeyboardMarkup | None = None) -> None:
-        if isinstance(target, CallbackQuery):
-            await target.message.answer(text, reply_markup=reply_markup)
-        else:
-            await target.answer(text, reply_markup=reply_markup)
+        await _send_clean_message(target, text, reply_markup=reply_markup)
 
     username = data.get("username")
     expire_at = data.get("expire_at")
@@ -2116,14 +2110,14 @@ async def _send_config_detail(target: Message | CallbackQuery, config_uuid: str)
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("config.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ Config profile fetch failed")
@@ -2131,7 +2125,7 @@ async def _send_config_detail(target: Message | CallbackQuery, config_uuid: str)
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_config_profile_detail(profile, _)
@@ -2139,7 +2133,7 @@ async def _send_config_detail(target: Message | CallbackQuery, config_uuid: str)
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _fetch_hosts_text() -> str:
@@ -2223,14 +2217,14 @@ async def _send_snippet_detail(target: Message | CallbackQuery, name: str) -> No
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except NotFoundError:
         text = _("snippet.not_found")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching snippet")
@@ -2238,7 +2232,7 @@ async def _send_snippet_detail(target: Message | CallbackQuery, name: str) -> No
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_snippet_detail(snippet, _)
@@ -2246,13 +2240,13 @@ async def _send_snippet_detail(target: Message | CallbackQuery, name: str) -> No
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _upsert_snippet(target: Message, action: str) -> None:
     parts = target.text.split(maxsplit=2)
     if len(parts) < 3:
-        await target.answer(_("snippet.usage"))
+        await _send_clean_message(target, _("snippet.usage"))
         return
     name = parts[1].strip()
     raw_json = parts[2].strip()
@@ -2261,7 +2255,7 @@ async def _upsert_snippet(target: Message, action: str) -> None:
 
         snippet_body = json.loads(raw_json)
     except Exception:
-        await target.answer(_("snippet.invalid_json"))
+        await _send_clean_message(target, _("snippet.invalid_json"))
         return
 
     try:
@@ -2270,17 +2264,17 @@ async def _upsert_snippet(target: Message, action: str) -> None:
         else:
             res = await api_client.update_snippet(name, snippet_body)
     except UnauthorizedError:
-        await target.answer(_("errors.unauthorized"))
+        await _send_clean_message(target, _("errors.unauthorized"))
         return
     except ApiClientError:
         logger.exception("❌ Snippet %s failed", action)
-        await target.answer(_("errors.generic"))
+        await _send_clean_message(target, _("errors.generic"))
         return
 
     # Return detail
     content = res.get("response", res).get("snippet", snippet_body)
     detail = build_snippet_detail({"name": name, "snippet": content}, _)
-    await target.answer(detail, reply_markup=snippet_actions_keyboard(name))
+    await _send_clean_message(target, detail, reply_markup=snippet_actions_keyboard(name))
 
 
 async def _create_token(target: Message | CallbackQuery, name: str) -> None:
@@ -2291,7 +2285,7 @@ async def _create_token(target: Message | CallbackQuery, name: str) -> None:
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
     except ApiClientError:
         logger.exception("❌ Create token failed")
@@ -2299,7 +2293,7 @@ async def _create_token(target: Message | CallbackQuery, name: str) -> None:
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
         else:
-            await target.answer(text)
+            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
         return
 
     summary = build_created_token(token, _)
@@ -2308,7 +2302,7 @@ async def _create_token(target: Message | CallbackQuery, name: str) -> None:
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=keyboard)
     else:
-        await target.answer(summary, reply_markup=keyboard)
+        await _send_clean_message(target, summary, reply_markup=keyboard)
 
 
 async def _show_tokens(
@@ -2318,21 +2312,8 @@ async def _show_tokens(
     markup = reply_markup or main_menu_keyboard()
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(text, reply_markup=markup)
-        send = target.message.answer
     else:
-        await target.answer(text, reply_markup=markup)
-        send = target.answer
-
-    # Also send first few tokens with delete buttons for quick actions
-    try:
-        data = await api_client.get_tokens()
-        tokens = data.get("response", {}).get("apiKeys", [])
-        for token in tokens[:5]:
-            line = build_token_line(token, _)
-            uuid = token.get("uuid", "")
-            await send(line, reply_markup=token_actions_keyboard(uuid))
-    except Exception:
-        logger.exception("⚠️ Failed to send token buttons")
+        await _send_clean_message(target, text, reply_markup=markup)
 async def _send_clean_message(
     target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None
 ) -> Message:
