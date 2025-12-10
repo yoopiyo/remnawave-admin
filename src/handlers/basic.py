@@ -2336,26 +2336,22 @@ async def _show_tokens(
 async def _send_clean_message(
     target: Message | CallbackQuery, text: str, reply_markup: InlineKeyboardMarkup | None = None
 ) -> Message:
-    if isinstance(target, CallbackQuery):
-        msg = target.message
-        bot = msg.bot
-        chat_id = msg.chat.id
-        try:
-            await msg.edit_text(text, reply_markup=reply_markup)
-            return msg
-        except Exception:
-            pass
-    else:
-        msg = target
-        bot = msg.bot
-        chat_id = msg.chat.id
+    msg = target.message if isinstance(target, CallbackQuery) else target
+    bot = msg.bot
+    chat_id = msg.chat.id
 
-    prev_id = LAST_BOT_MESSAGES.pop(chat_id, None)
+    prev_id = LAST_BOT_MESSAGES.get(chat_id)
     if prev_id:
         try:
-            await bot.delete_message(chat_id=chat_id, message_id=prev_id)
+            edited = await bot.edit_message_text(
+                chat_id=chat_id, message_id=prev_id, text=text, reply_markup=reply_markup
+            )
+            return edited
         except Exception:
-            pass
+            try:
+                await bot.delete_message(chat_id=chat_id, message_id=prev_id)
+            except Exception:
+                pass
 
     sent = await msg.answer(text, reply_markup=reply_markup)
     LAST_BOT_MESSAGES[chat_id] = sent.message_id
