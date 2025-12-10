@@ -29,14 +29,12 @@ async def main() -> None:
     await bot.set_my_commands(
         [
             BotCommand(command="start", description="Start working with the bot"),
-            BotCommand(command="help", description="Help and commands"),
         ],
         scope=BotCommandScopeDefault(),
     )
     await bot.set_my_commands(
         [
             BotCommand(command="start", description="Начать работу с ботом"),
-            BotCommand(command="help", description="Справка и команды"),
         ],
         scope=BotCommandScopeDefault(),
         language_code="ru",
