@@ -1,6 +1,8 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 
+from src.keyboards.navigation import NavTarget, nav_row
+
 
 def bulk_hosts_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -11,6 +13,6 @@ def bulk_hosts_keyboard() -> InlineKeyboardMarkup:
             ],
             [InlineKeyboardButton(text=_("bulk_hosts.delete"), callback_data="bulk:hosts:delete")],
             [InlineKeyboardButton(text=_("bulk_hosts.prompt"), callback_data="bulk:hosts:prompt")],
-            [InlineKeyboardButton(text=_("actions.back"), callback_data="menu:back")],
+            nav_row(NavTarget.BULK_MENU),
         ]
     )

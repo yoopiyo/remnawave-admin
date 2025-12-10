@@ -81,6 +81,9 @@ class RemnawaveApiClient:
     async def get_user_by_uuid(self, user_uuid: str) -> dict:
         return await self._get(f"/api/users/{user_uuid}")
 
+    async def get_users(self, start: int = 0, size: int = 100) -> dict:
+        return await self._get(f"/api/users?start={start}&size={size}")
+
     async def disable_user(self, user_uuid: str) -> dict:
         return await self._post(f"/api/users/{user_uuid}/actions/disable")
 

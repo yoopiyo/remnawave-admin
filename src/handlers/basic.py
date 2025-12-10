@@ -2,7 +2,7 @@ import asyncio
 
 from aiogram import F, Router
 from aiogram.filters import Command
-from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
+from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 from datetime import datetime, timedelta
 
@@ -15,6 +15,7 @@ from src.keyboards.main_menu import (
     billing_overview_keyboard,
     bulk_menu_keyboard,
 )
+from src.keyboards.navigation import NavTarget, nav_keyboard, nav_row
 from src.keyboards.user_create import (
     user_create_description_keyboard,
     user_create_expire_keyboard,
@@ -74,7 +75,11 @@ from src.utils.logger import logger
 router = Router(name="basic")
 PENDING_INPUT: dict[int, dict] = {}
 LAST_BOT_MESSAGES: dict[int, int] = {}
+USER_SEARCH_CONTEXT: dict[int, dict] = {}
+USER_DETAIL_BACK_TARGET: dict[int, str] = {}
 ADMIN_COMMAND_DELETE_DELAY = 2.0
+SEARCH_PAGE_SIZE = 100
+MAX_SEARCH_RESULTS = 10
 
 
 async def _cleanup_message(message: Message, delay: float = 0.0) -> None:
@@ -127,7 +132,9 @@ async def handle_pending(message: Message) -> None:
         return
     ctx = PENDING_INPUT.pop(user_id)
     action = ctx.get("action")
-    if action == "template_create":
+    if action == "user_search":
+        await _handle_user_search_input(message, ctx)
+    elif action == "template_create":
         await _handle_template_create_input(message, ctx)
     elif action == "template_update_json":
         await _handle_template_update_json_input(message, ctx)
@@ -310,11 +317,8 @@ async def cmd_user(message: Message) -> None:
         return
 
     parts = message.text.split(maxsplit=1)
-    if len(parts) < 2:
-        await _send_clean_message(message, _("bot.user_usage"))
-        return
-    query = parts[1].strip()
-    await _send_user_detail(message, query)
+    preset_query = parts[1].strip() if len(parts) > 1 else ""
+    await _start_user_search_flow(message, preset_query or None)
 
 
 @router.message(Command("user_create"))
@@ -595,7 +599,31 @@ async def cb_find_user(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    await callback.message.edit_text(_("bot.user_usage"), reply_markup=users_menu_keyboard())
+    await _start_user_search_flow(callback)
+
+
+@router.callback_query(F.data.startswith("user_search:view:"))
+async def cb_user_search_view(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    user_uuid = callback.data.split(":", 2)[2]
+    back_to = NavTarget.USER_SEARCH_RESULTS
+    try:
+        user = await api_client.get_user_by_uuid(user_uuid)
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+        return
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+        return
+    except ApiClientError:
+        logger.exception("в?? User search selection failed user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+        return
+
+    PENDING_INPUT[callback.from_user.id] = {"action": "user_search"}
+    await _send_user_summary(callback, user, back_to=back_to)
 
 
 @router.callback_query(F.data == "menu:nodes")
@@ -764,12 +792,29 @@ async def cb_billing_nodes_actions(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=billing_nodes_menu_keyboard())
 
 
+@router.callback_query(F.data == "nav:home")
+async def cb_nav_home(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.MAIN_MENU)
+
+
+@router.callback_query(F.data.startswith("nav:back:"))
+async def cb_nav_back(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    target = callback.data.split(":", 2)[2]
+    await _navigate(callback, target)
+
+
 @router.callback_query(F.data == "menu:back")
 async def cb_back(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    await callback.message.edit_text(_("bot.menu"), reply_markup=main_menu_keyboard())
+    await _navigate(callback, NavTarget.MAIN_MENU)
 
 
 @router.callback_query(F.data.startswith("user:"))
@@ -778,6 +823,7 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     _, user_uuid, action = callback.data.split(":")
+    back_to = _get_user_detail_back_target(callback.from_user.id)
     try:
         if action == "enable":
             await api_client.enable_user(user_uuid)
@@ -793,7 +839,10 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
         user = await api_client.get_user_by_uuid(user_uuid)
         summary = build_user_summary(user, _)
         status = user.get("response", user).get("status", "UNKNOWN")
-        await callback.message.edit_text(summary, reply_markup=user_actions_keyboard(user_uuid, status))
+        await callback.message.edit_text(
+            summary, reply_markup=user_actions_keyboard(user_uuid, status, back_to=back_to)
+        )
+        _store_user_detail_back_target(callback.from_user.id, back_to)
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())
     except NotFoundError:
@@ -1101,40 +1150,62 @@ async def cb_config_actions(callback: CallbackQuery) -> None:
 
 
 # Helpers
-async def _send_user_detail(target: Message | CallbackQuery, query: str) -> None:
+async def _send_user_detail(
+    target: Message | CallbackQuery, query: str, back_to: str = NavTarget.USERS_MENU
+) -> None:
     try:
         user = await _fetch_user(query)
     except UnauthorizedError:
         text = _("errors.unauthorized")
+        markup = nav_keyboard(back_to)
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text, reply_markup=main_menu_keyboard())
+            await target.message.edit_text(text, reply_markup=markup)
         else:
-            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
+            await _send_clean_message(target, text, reply_markup=markup)
         return
     except NotFoundError:
         text = _("user.not_found")
+        markup = nav_keyboard(back_to)
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text, reply_markup=main_menu_keyboard())
+            await target.message.edit_text(text, reply_markup=markup)
         else:
-            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
+            await _send_clean_message(target, text, reply_markup=markup)
         return
     except ApiClientError:
         logger.exception("⚠️ API client error while fetching user query=%s", query)
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text, reply_markup=main_menu_keyboard())
+            await target.message.edit_text(text, reply_markup=nav_keyboard(back_to))
         else:
-            await _send_clean_message(target, text, reply_markup=main_menu_keyboard())
+            await _send_clean_message(target, text, reply_markup=nav_keyboard(back_to))
         return
 
+    await _send_user_summary(target, user, back_to=back_to)
+
+
+async def _send_user_summary(target: Message | CallbackQuery, user: dict, back_to: str) -> None:
     summary = build_user_summary(user, _)
-    status = user.get("response", user).get("status", "UNKNOWN")
-    uuid = user.get("response", user).get("uuid")
-    reply_markup = user_actions_keyboard(uuid, status)
+    info = user.get("response", user)
+    status = info.get("status", "UNKNOWN")
+    uuid = info.get("uuid")
+    reply_markup = user_actions_keyboard(uuid, status, back_to=back_to)
+    user_id = None
     if isinstance(target, CallbackQuery):
         await target.message.edit_text(summary, reply_markup=reply_markup)
+        user_id = target.from_user.id
     else:
         await _send_clean_message(target, summary, reply_markup=reply_markup)
+        user_id = target.from_user.id if getattr(target, "from_user", None) else None
+    if user_id is not None:
+        _store_user_detail_back_target(user_id, back_to)
+
+
+def _store_user_detail_back_target(user_id: int, back_to: str) -> None:
+    USER_DETAIL_BACK_TARGET[user_id] = back_to
+
+
+def _get_user_detail_back_target(user_id: int) -> str:
+    return USER_DETAIL_BACK_TARGET.get(user_id, NavTarget.USERS_MENU)
 
 
 async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, from_callback: bool = False) -> None:
@@ -1511,6 +1582,233 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
         logger.exception("❌ Bulk hosts action failed")
         await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
 
+
+
+
+def _get_target_user_id(target: Message | CallbackQuery) -> int | None:
+    if isinstance(target, CallbackQuery):
+        return target.from_user.id
+    return target.from_user.id if getattr(target, "from_user", None) else None
+
+
+def _clear_user_state(user_id: int | None, keep_search: bool = False) -> None:
+    if user_id is None:
+        return
+    PENDING_INPUT.pop(user_id, None)
+    if not keep_search:
+        USER_SEARCH_CONTEXT.pop(user_id, None)
+        USER_DETAIL_BACK_TARGET.pop(user_id, None)
+
+
+async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
+    user_id = _get_target_user_id(target)
+    keep_search = destination in {NavTarget.USER_SEARCH_PROMPT, NavTarget.USER_SEARCH_RESULTS}
+    _clear_user_state(user_id, keep_search=keep_search)
+
+    if destination == NavTarget.MAIN_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=main_menu_keyboard())
+        return
+    if destination == NavTarget.USERS_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=users_menu_keyboard())
+        return
+    if destination == NavTarget.USER_SEARCH_PROMPT:
+        await _start_user_search_flow(target)
+        return
+    if destination == NavTarget.USER_SEARCH_RESULTS:
+        ctx = USER_SEARCH_CONTEXT.get(user_id, {})
+        query = ctx.get("query", "")
+        results = ctx.get("results", [])
+        if results:
+            await _show_user_search_results(target, query, results)
+        else:
+            await _start_user_search_flow(target)
+        return
+    if destination == NavTarget.NODES_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=nodes_menu_keyboard())
+        return
+    if destination == NavTarget.NODES_LIST:
+        text = await _fetch_nodes_text()
+        await _send_clean_message(target, text, reply_markup=nodes_menu_keyboard())
+        return
+    if destination == NavTarget.HOSTS_MENU:
+        text = await _fetch_hosts_text()
+        await _send_clean_message(target, text, reply_markup=nodes_menu_keyboard())
+        return
+    if destination == NavTarget.CONFIGS_MENU:
+        text = await _fetch_configs_text()
+        await _send_clean_message(target, text, reply_markup=nodes_menu_keyboard())
+        return
+    if destination == NavTarget.RESOURCES_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=resources_menu_keyboard())
+        return
+    if destination == NavTarget.TOKENS_MENU:
+        await _show_tokens(target, reply_markup=resources_menu_keyboard())
+        return
+    if destination == NavTarget.TEMPLATES_MENU:
+        text = await _fetch_templates_text()
+        await _send_clean_message(target, text, reply_markup=template_menu_keyboard())
+        return
+    if destination == NavTarget.SNIPPETS_MENU:
+        text = await _fetch_snippets_text()
+        await _send_clean_message(target, text, reply_markup=resources_menu_keyboard())
+        return
+    if destination == NavTarget.BILLING_MENU:
+        text = await _fetch_billing_text()
+        await _send_clean_message(target, text, reply_markup=billing_menu_keyboard())
+        return
+    if destination == NavTarget.BILLING_NODES_MENU:
+        text = await _fetch_billing_nodes_text()
+        await _send_clean_message(target, text, reply_markup=billing_nodes_menu_keyboard())
+        return
+    if destination == NavTarget.PROVIDERS_MENU:
+        text = await _fetch_providers_text()
+        await _send_clean_message(target, text, reply_markup=providers_menu_keyboard())
+        return
+    if destination == NavTarget.BULK_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=bulk_menu_keyboard())
+        return
+    if destination == NavTarget.SYSTEM_MENU:
+        await _send_clean_message(target, _("bot.menu"), reply_markup=system_menu_keyboard())
+        return
+
+    await _send_clean_message(target, _("bot.menu"), reply_markup=main_menu_keyboard())
+
+
+async def _start_user_search_flow(target: Message | CallbackQuery, preset_query: str | None = None) -> None:
+    user_id = _get_target_user_id(target)
+    _clear_user_state(user_id)
+    if user_id is not None:
+        PENDING_INPUT[user_id] = {"action": "user_search"}
+    if preset_query:
+        await _run_user_search(target, preset_query)
+        return
+    await _send_clean_message(target, _("user.search_prompt"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+
+
+async def _handle_user_search_input(message: Message, ctx: dict) -> None:
+    query = (message.text or "").strip()
+    PENDING_INPUT[message.from_user.id] = {"action": "user_search"}
+    if not query:
+        await _send_clean_message(message, _("user.search_prompt"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+        return
+    await _run_user_search(message, query)
+
+
+async def _run_user_search(target: Message | CallbackQuery, query: str) -> None:
+    user_id = _get_target_user_id(target)
+    try:
+        matches = await _search_users(query)
+    except UnauthorizedError:
+        await _send_clean_message(target, _("errors.unauthorized"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+        return
+    except ApiClientError:
+        logger.exception("User search failed query=%s actor_id=%s", query, user_id)
+        await _send_clean_message(target, _("errors.generic"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+        return
+
+    if user_id is not None:
+        PENDING_INPUT[user_id] = {"action": "user_search"}
+        USER_SEARCH_CONTEXT[user_id] = {"query": query, "results": matches}
+
+    if not matches:
+        await _send_clean_message(
+            target,
+            _("user.search_no_results").format(query=query),
+            reply_markup=nav_keyboard(NavTarget.USERS_MENU),
+        )
+        return
+
+    if len(matches) == 1:
+        await _send_user_summary(target, matches[0], back_to=NavTarget.USER_SEARCH_PROMPT)
+        return
+
+    await _show_user_search_results(target, query, matches)
+
+
+async def _show_user_search_results(target: Message | CallbackQuery, query: str, results: list[dict]) -> None:
+    user_id = _get_target_user_id(target)
+    if user_id is not None:
+        PENDING_INPUT[user_id] = {"action": "user_search"}
+
+    rows = []
+    for user in results[:MAX_SEARCH_RESULTS]:
+        info = user.get("response", user)
+        uuid = info.get("uuid")
+        if not uuid:
+            continue
+        rows.append([InlineKeyboardButton(text=_format_user_choice(info), callback_data=f"user_search:view:{uuid}")])
+
+    rows.append(nav_row(NavTarget.USER_SEARCH_PROMPT))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+
+    extra_line = ""
+    if len(results) > MAX_SEARCH_RESULTS:
+        extra_line = _("user.search_results_limited").format(shown=MAX_SEARCH_RESULTS, total=len(results))
+
+    text = _("user.search_results").format(count=len(results), query=query)
+    if extra_line:
+        text = f"{text}\\n{extra_line}"
+    await _send_clean_message(target, text, reply_markup=keyboard)
+
+
+async def _search_users(query: str) -> list[dict]:
+    search_term = query.strip()
+    if not search_term:
+        return []
+    normalized = search_term.lower()
+    matches: list[dict] = []
+    start = 0
+    while True:
+        data = await api_client.get_users(start=start, size=SEARCH_PAGE_SIZE)
+        payload = data.get("response", data)
+        users = payload.get("users") or []
+        total = payload.get("total", len(users))
+        for user in users:
+            if _user_matches_query(user, normalized):
+                matches.append(user)
+        start += SEARCH_PAGE_SIZE
+        if start >= total or not users:
+            break
+    return matches
+
+
+def _user_matches_query(user: dict, normalized_query: str) -> bool:
+    info = user.get("response", user)
+    needle = normalized_query.lstrip("@")
+    candidates = [
+        (info.get("username") or "").lstrip("@").lower(),
+        (info.get("email") or "").lower(),
+        (info.get("description") or "").lower(),
+    ]
+    telegram_id = info.get("telegramId")
+    if telegram_id is not None:
+        candidates.append(str(telegram_id))
+    return any(needle in field for field in candidates if field)
+
+
+def _format_user_choice(user: dict) -> str:
+    username = user.get("username") or "n/a"
+    username = username if username.startswith("@") else f"@{username}"
+    email = user.get("email") or ""
+    telegram_id = user.get("telegramId")
+    description = user.get("description") or ""
+
+    details = []
+    if email:
+        details.append(email)
+    if telegram_id is not None:
+        details.append(f"tg:{telegram_id}")
+    if description:
+        details.append(description)
+
+    label = username
+    if details:
+        label = f"{label} - {' | '.join(details)}"
+    return _truncate(label, limit=64)
+
+
+def _truncate(text: str, limit: int = 64) -> str:
+    return text if len(text) <= limit else text[: limit - 3] + "..."
 
 async def _fetch_user(query: str) -> dict:
     if query.isdigit():

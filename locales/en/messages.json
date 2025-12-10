@@ -1,9 +1,9 @@
 {
   "bot": {
     "welcome": "👋 Welcome to the Remnawave admin bot. Control users, nodes, and billing from one place.",
-    "help": "ℹ️ Quick commands:\n\nCore:\n/start — welcome\n/help — this help\n/health — system check\n/stats — summary\n/bandwidth — traffic\n\nUsers:\n/user <username|telegram_id> — find user\n/user_create <username> <expire_iso> [telegram_id] — create user\n\nInfra:\n/nodes — list nodes\n/node <uuid> — node details\n/nodes_usage — realtime usage\n/nodes_range <start_iso> <end_iso> — traffic by range\n/hosts — list hosts\n/host <uuid> — host details\n\nOther:\n/sub <short_uuid> — subscription\n/tokens — API tokens\n/templates — templates\n/snippets — snippets\n/configs — configs\n/billing — billing\n/providers — providers",
+    "help": "ℹ️ Quick commands:\n\nCore:\n/start — welcome\n/help — this help\n/health — system check\n/stats — summary\n/bandwidth — traffic\n\nUsers:\nUsers → Find user (menu) — search by username/email/Telegram ID/description\n/user_create <username> <expire_iso> [telegram_id] — create user\n\nInfra:\n/nodes — list nodes\n/node <uuid> — node details\n/nodes_usage — realtime usage\n/nodes_range <start_iso> <end_iso> — traffic by range\n/hosts — list hosts\n/host <uuid> — host details\n\nOther:\n/sub <short_uuid> — subscription\n/tokens — API tokens\n/templates — templates\n/snippets — snippets\n/configs — configs\n/billing — billing\n/providers — providers",
     "menu": "📋 Choose an action below:",
-    "user_usage": "🔍 Send /user <username|telegram_id> to get user info."
+    "user_usage": "🔍 Use Users → Find user and type username/email/Telegram ID/description."
   },
   "actions": {
     "menu_users": "👥 Users",
@@ -30,6 +30,7 @@
     "bulk_hosts": "🖥📦 Bulk hosts",
     "bulk_nodes": "🛰📦 Bulk nodes",
     "back": "↩️ Back",
+    "main_menu": "🏠 Main menu",
     "enable": "✅ Enable",
     "disable": "⛔️ Disable",
     "reset_traffic": "🔁 Reset traffic",
@@ -92,7 +93,11 @@
     "unlimited": "♾ Unlimited",
     "not_set": "— Not set",
     "no_squad": "— Not selected",
-    "usage_create": "📌 Usage: /user_create <username> <expire_iso> [telegram_id]"
+    "usage_create": "📌 Usage: /user_create <username> <expire_iso> [telegram_id]",
+    "search_prompt": "🔎 Enter username, email, Telegram ID, or description to search.",
+    "search_no_results": "No matches for \"{query}\". Try again or use the buttons below.",
+    "search_results": "Found {count} match(es) for \"{query}\". Choose a user or send a new query.",
+    "search_results_limited": "Showing first {shown} of {total} results."
   },
   "node": {
     "usage": "🛰 Send /node <uuid> to view and manage a node.",

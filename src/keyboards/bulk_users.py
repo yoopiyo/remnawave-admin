@@ -1,6 +1,8 @@
 from aiogram.types import InlineKeyboardButton, InlineKeyboardMarkup
 from aiogram.utils.i18n import gettext as _
 
+from src.keyboards.navigation import NavTarget, nav_row
+
 
 def bulk_users_keyboard() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -23,6 +25,6 @@ def bulk_users_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=_("bulk.btn_status"), callback_data="bulk:prompt:status"),
             ],
             [InlineKeyboardButton(text=_("bulk.show_usage"), callback_data="bulk:users:usage")],
-            [InlineKeyboardButton(text=_("actions.back"), callback_data="menu:back")],
+            nav_row(NavTarget.BULK_MENU),
         ]
     )
