@@ -492,7 +492,7 @@ async def cb_create_user(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    logger.info("User create flow started by user_id=%s", callback.from_user.id)
+    logger.info("🚀 User create flow started by user_id=%s", callback.from_user.id)
     PENDING_INPUT[callback.from_user.id] = {"action": "user_create", "stage": "username", "data": {}}
     await _send_user_create_prompt(callback, _("user.prompt_username"))
 
@@ -502,7 +502,7 @@ async def cb_user_create_flow(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    logger.info("User create callback action=%s user_id=%s", callback.data, callback.from_user.id)
+    logger.info("🔄 User create callback action=%s user_id=%s", callback.data, callback.from_user.id)
     await _handle_user_create_callback(callback)
 
 
@@ -773,7 +773,7 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("user.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("User action failed: %s", action)
+        logger.exception("❌ User action failed action=%s user_uuid=%s actor_id=%s", action, user_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -801,7 +801,7 @@ async def cb_node_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("node.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Node action failed: %s", action)
+        logger.exception("❌ Node action failed action=%s node_uuid=%s actor_id=%s", action, node_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -825,7 +825,7 @@ async def cb_host_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("host.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Host action failed: %s", action)
+        logger.exception("❌ Host action failed action=%s host_uuid=%s actor_id=%s", action, host_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -846,7 +846,7 @@ async def cb_token_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("token.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Token action failed: %s", action)
+        logger.exception("❌ Token action failed action=%s token_uuid=%s actor_id=%s", action, token_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -881,7 +881,7 @@ async def cb_template_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("template.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Template action failed: %s", action)
+        logger.exception("❌ Template action failed action=%s template_uuid=%s actor_id=%s", action, tpl_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -902,7 +902,7 @@ async def cb_snippet_actions(callback: CallbackQuery) -> None:
     except NotFoundError:
         await callback.message.edit_text(_("snippet.not_found"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Snippet action failed: %s", action)
+        logger.exception("❌ Snippet action failed action=%s name=%s actor_id=%s", action, name, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
@@ -950,7 +950,7 @@ async def cb_bulk_users_actions(callback: CallbackQuery) -> None:
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())
     except ApiClientError:
-        logger.exception("Bulk users action failed: %s", action)
+        logger.exception("❌ Bulk users action failed action=%s", action)
         await callback.message.edit_text(_("bulk.error"), reply_markup=main_menu_keyboard())
 
 
@@ -1050,7 +1050,7 @@ async def _run_bulk_action(
     except UnauthorizedError:
         await _reply(target, _("errors.unauthorized"))
     except ApiClientError:
-        logger.exception("Bulk users action failed: %s", action)
+        logger.exception("❌ Bulk users action failed action=%s", action)
         await _reply(target, _("bulk.error"))
 
 
@@ -1093,7 +1093,7 @@ async def _send_user_detail(target: Message | CallbackQuery, query: str) -> None
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching user")
+        logger.exception("⚠️ API client error while fetching user query=%s", query)
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -1129,7 +1129,7 @@ async def _send_node_detail(target: Message | CallbackQuery, node_uuid: str, fro
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching node")
+        logger.exception("⚠️ API client error while fetching node node_uuid=%s", node_uuid)
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -1166,7 +1166,7 @@ async def _send_host_detail(target: Message | CallbackQuery, host_uuid: str, fro
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching host")
+        logger.exception("⚠️ API client error while fetching host host_uuid=%s", host_uuid)
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -1203,7 +1203,7 @@ async def _send_subscription_detail(target: Message | CallbackQuery, short_uuid:
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching subscription")
+        logger.exception("⚠️ API client error while fetching subscription short_uuid=%s", short_uuid)
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -1238,7 +1238,7 @@ async def _send_template_detail(target: Message | CallbackQuery, tpl_uuid: str) 
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching template")
+        logger.exception("⚠️ API client error while fetching template")
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -1270,7 +1270,7 @@ async def _handle_template_create_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=template_menu_keyboard())
     except ApiClientError:
-        logger.exception("Template create failed")
+        logger.exception("❌ Template create failed")
         await message.answer(_("template.invalid_payload"), reply_markup=template_menu_keyboard())
 
 
@@ -1289,7 +1289,7 @@ async def _handle_template_update_json_input(message: Message, ctx: dict) -> Non
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=template_actions_keyboard(tpl_uuid))
     except ApiClientError:
-        logger.exception("Template update failed")
+        logger.exception("❌ Template update failed")
         await message.answer(_("template.invalid_payload"), reply_markup=template_actions_keyboard(tpl_uuid))
 
 
@@ -1304,7 +1304,7 @@ async def _handle_template_reorder_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=template_menu_keyboard())
     except ApiClientError:
-        logger.exception("Template reorder failed")
+        logger.exception("❌ Template reorder failed")
         await message.answer(_("template.invalid_payload"), reply_markup=template_menu_keyboard())
 
 
@@ -1345,7 +1345,7 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=providers_menu_keyboard())
     except ApiClientError:
-        logger.exception("Provider action failed: %s", action)
+        logger.exception("❌ Provider action failed: %s", action)
         await message.answer(_("provider.invalid"), reply_markup=providers_menu_keyboard())
 
 
@@ -1375,7 +1375,7 @@ async def _handle_billing_history_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=billing_menu_keyboard())
     except ApiClientError:
-        logger.exception("Billing history action failed: %s", action)
+        logger.exception("❌ Billing history action failed: %s", action)
         await message.answer(_("billing.invalid"), reply_markup=billing_menu_keyboard())
 
 
@@ -1415,7 +1415,7 @@ async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=billing_nodes_menu_keyboard())
     except ApiClientError:
-        logger.exception("Billing nodes action failed: %s", action)
+        logger.exception("❌ Billing nodes action failed: %s", action)
         await message.answer(_("billing_nodes.invalid"), reply_markup=billing_nodes_menu_keyboard())
 
 
@@ -1458,7 +1458,7 @@ async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=bulk_nodes_keyboard())
     except ApiClientError:
-        logger.exception("Bulk nodes action failed")
+        logger.exception("❌ Bulk nodes action failed")
         await message.answer(_("errors.generic"), reply_markup=bulk_nodes_keyboard())
 
 
@@ -1482,7 +1482,7 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
     except UnauthorizedError:
         await message.answer(_("errors.unauthorized"), reply_markup=bulk_hosts_keyboard())
     except ApiClientError:
-        logger.exception("Bulk hosts action failed")
+        logger.exception("❌ Bulk hosts action failed")
         await message.answer(_("errors.generic"), reply_markup=bulk_hosts_keyboard())
 
 
@@ -1513,28 +1513,28 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
     try:
         res = await api_client.get_internal_squads()
         squads = res.get("response", {}).get("internalSquads", [])
-        logger.info("Loaded %s internal squads for user_id=%s", len(squads), target.from_user.id)
+        logger.info("📥 Loaded %s internal squads for user_id=%s", len(squads), target.from_user.id)
     except UnauthorizedError:
         await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
         return
     except ApiClientError:
-        logger.exception("Failed to load internal squads")
+        logger.exception("⚠️ Failed to load internal squads")
     except Exception:
-        logger.exception("Unexpected error while loading internal squads")
+        logger.exception("⚠️ Unexpected error while loading internal squads")
 
     if not squads:
         try:
             res = await api_client.get_external_squads()
             squads = res.get("response", {}).get("externalSquads", [])
             squad_source = "external"
-            logger.info("Loaded %s external squads for user_id=%s", len(squads), target.from_user.id)
+            logger.info("📥 Loaded %s external squads for user_id=%s", len(squads), target.from_user.id)
         except UnauthorizedError:
             await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard())
             return
         except ApiClientError:
-            logger.exception("Failed to load external squads")
+            logger.exception("⚠️ Failed to load external squads")
         except Exception:
-            logger.exception("Unexpected error while loading external squads")
+            logger.exception("⚠️ Unexpected error while loading external squads")
 
     if not squads:
         await _send_user_create_prompt(
@@ -1546,6 +1546,12 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
     markup = user_create_squad_keyboard(squads_sorted)
     text = _("user.prompt_squad") if squads_sorted else _("user.squad_load_failed")
     data["squad_source"] = squad_source
+    logger.info(
+        "🧩 Squad prompt using source=%s squads_count=%s user_id=%s",
+        squad_source,
+        len(squads_sorted),
+        target.from_user.id,
+    )
     PENDING_INPUT[target.from_user.id] = ctx
     await _send_user_create_prompt(target, text, markup)
 
@@ -1598,7 +1604,7 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
         internal_squads = [squad_uuid] if squad_uuid and squad_source != "external" else None
         external_squad_uuid = squad_uuid if squad_uuid and squad_source == "external" else None
         logger.info(
-            "Creating user username=%s expire_at=%s traffic_bytes=%s hwid=%s telegram_id=%s squad_source=%s internal_squads=%s external_squad_uuid=%s",
+            "👤 Creating user username=%s expire_at=%s traffic_bytes=%s hwid=%s telegram_id=%s squad_source=%s internal_squads=%s external_squad_uuid=%s actor_id=%s",
             username,
             expire_at,
             data.get("traffic_limit_bytes"),
@@ -1607,6 +1613,7 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
             squad_source,
             internal_squads,
             external_squad_uuid,
+            target.from_user.id if hasattr(target, "from_user") else "n/a",
         )
         user = await api_client.create_user(
             username=username,
@@ -1623,7 +1630,7 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
         await _respond(_("errors.unauthorized"), reply_markup=users_menu_keyboard())
         return
     except ApiClientError:
-        logger.exception("Create user failed")
+        logger.exception("❌ Create user failed")
         await _respond(_("errors.generic"), reply_markup=users_menu_keyboard())
         return
 
@@ -1639,7 +1646,13 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
     data = ctx.setdefault("data", {})
     stage = ctx.get("stage", "username")
     text = message.text.strip()
-    logger.info("User create input stage=%s user_id=%s text='%s'", stage, user_id, text)
+    logger.info(
+        "✏️ User create input stage=%s user_id=%s text='%s' ctx_keys=%s",
+        stage,
+        user_id,
+        text,
+        sorted(list(ctx.keys())),
+    )
 
     if stage == "username":
         if not text:
@@ -1716,7 +1729,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         try:
             await _send_squad_prompt(message, ctx)
         except Exception:
-            logger.exception("Squad prompt failed, falling back to manual entry")
+            logger.exception("⚠️ Squad prompt failed, falling back to manual entry")
             await _send_user_create_prompt(
                 message, _("user.squad_load_failed"), user_create_squad_keyboard([])
             )
@@ -1800,7 +1813,7 @@ async def _handle_user_create_callback(callback: CallbackQuery) -> None:
             try:
                 await _send_squad_prompt(callback, ctx)
             except Exception:
-                logger.exception("Squad prompt failed from callback, falling back to manual entry")
+                logger.exception("⚠️ Squad prompt failed from callback, falling back to manual entry")
                 await _send_user_create_prompt(
                     callback, _("user.squad_load_failed"), user_create_squad_keyboard([])
                 )
@@ -1847,7 +1860,7 @@ async def _fetch_health_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Health check failed")
+        logger.exception("⚠️ Health check failed")
         return _("errors.generic")
 
 
@@ -1882,7 +1895,7 @@ async def _fetch_stats_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Stats fetch failed")
+        logger.exception("⚠️ Stats fetch failed")
         return _("errors.generic")
 
 
@@ -1893,7 +1906,7 @@ async def _fetch_bandwidth_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Bandwidth fetch failed")
+        logger.exception("⚠️ Bandwidth fetch failed")
         return _("errors.generic")
 
 
@@ -1905,7 +1918,7 @@ async def _fetch_billing_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Billing fetch failed")
+        logger.exception("⚠️ Billing fetch failed")
         return _("errors.generic")
 
 
@@ -1917,7 +1930,7 @@ async def _fetch_providers_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Providers fetch failed")
+        logger.exception("⚠️ Providers fetch failed")
         return _("errors.generic")
 
 
@@ -1928,7 +1941,7 @@ async def _fetch_billing_nodes_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Billing nodes fetch failed")
+        logger.exception("⚠️ Billing nodes fetch failed")
         return _("errors.generic")
 
 
@@ -1962,7 +1975,7 @@ async def _fetch_nodes_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Nodes fetch failed")
+        logger.exception("⚠️ Nodes fetch failed")
         return _("errors.generic")
 
 
@@ -1974,7 +1987,7 @@ async def _fetch_nodes_realtime_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Nodes realtime fetch failed")
+        logger.exception("⚠️ Nodes realtime fetch failed")
         return _("errors.generic")
 
 
@@ -1986,7 +1999,7 @@ async def _fetch_nodes_range_text(start: str, end: str) -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Nodes range fetch failed")
+        logger.exception("⚠️ Nodes range fetch failed")
         return _("errors.generic")
 
 
@@ -1998,7 +2011,7 @@ async def _fetch_configs_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Config profiles fetch failed")
+        logger.exception("⚠️ Config profiles fetch failed")
         return _("errors.generic")
 
 
@@ -2020,7 +2033,7 @@ async def _send_config_detail(target: Message | CallbackQuery, config_uuid: str)
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("Config profile fetch failed")
+        logger.exception("⚠️ Config profile fetch failed")
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -2065,7 +2078,7 @@ async def _fetch_hosts_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Hosts fetch failed")
+        logger.exception("⚠️ Hosts fetch failed")
         return _("errors.generic")
 
 
@@ -2077,7 +2090,7 @@ async def _fetch_tokens_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Tokens fetch failed")
+        logger.exception("⚠️ Tokens fetch failed")
         return _("errors.generic")
 
 
@@ -2089,7 +2102,7 @@ async def _fetch_templates_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Templates fetch failed")
+        logger.exception("⚠️ Templates fetch failed")
         return _("errors.generic")
 
 
@@ -2101,7 +2114,7 @@ async def _fetch_snippets_text() -> str:
     except UnauthorizedError:
         return _("errors.unauthorized")
     except ApiClientError:
-        logger.exception("Snippets fetch failed")
+        logger.exception("⚠️ Snippets fetch failed")
         return _("errors.generic")
 
 
@@ -2127,7 +2140,7 @@ async def _send_snippet_detail(target: Message | CallbackQuery, name: str) -> No
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("API client error while fetching snippet")
+        logger.exception("⚠️ API client error while fetching snippet")
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -2167,7 +2180,7 @@ async def _upsert_snippet(target: Message, action: str) -> None:
         await target.answer(_("errors.unauthorized"))
         return
     except ApiClientError:
-        logger.exception("Snippet %s failed", action)
+        logger.exception("❌ Snippet %s failed", action)
         await target.answer(_("errors.generic"))
         return
 
@@ -2188,7 +2201,7 @@ async def _create_token(target: Message | CallbackQuery, name: str) -> None:
             await target.answer(text)
         return
     except ApiClientError:
-        logger.exception("Create token failed")
+        logger.exception("❌ Create token failed")
         text = _("errors.generic")
         if isinstance(target, CallbackQuery):
             await target.message.edit_text(text, reply_markup=main_menu_keyboard())
@@ -2226,4 +2239,4 @@ async def _show_tokens(
             uuid = token.get("uuid", "")
             await send(line, reply_markup=token_actions_keyboard(uuid))
     except Exception:
-        logger.exception("Failed to send token buttons")
+        logger.exception("⚠️ Failed to send token buttons")
