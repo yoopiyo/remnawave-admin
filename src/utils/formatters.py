@@ -370,41 +370,43 @@ def build_config_profile_detail(profile: dict, t: Callable[[str], str]) -> str:
 
 def build_billing_history(records: list[dict], t: Callable[[str], str]) -> str:
     if not records:
-        return t("billing.empty")
-    lines = [t("billing.title").format(total=len(records))]
+        return f"*{t('billing.title').split(':')[0]}*\n\n{t('billing.empty')}"
+    lines = [f"*{t('billing.title').format(total=len(records))}*", ""]
     for rec in records[:10]:
         provider = rec.get("provider", {})
-        uuid = rec.get("uuid")
-        uuid_suffix = f" (uuid: {uuid})" if uuid else ""
+        amount = rec.get("amount", NA)
+        date = format_datetime(rec.get("billedAt"))
+        provider_name = provider.get("name", NA)
         lines.append(
             t("billing.item").format(
-                amount=rec.get("amount", NA),
-                provider=provider.get("name", NA),
-                date=format_datetime(rec.get("billedAt")),
+                amount=f"*{amount}*",
+                provider=f"`{provider_name}`",
+                date=f"`{date}`",
             )
-            + uuid_suffix
         )
     if len(records) > 10:
+        lines.append("")
         lines.append(t("billing.more").format(count=len(records) - 10))
     return "\n".join(lines)
 
 
 def build_infra_providers(providers: list[dict], t: Callable[[str], str]) -> str:
     if not providers:
-        return t("provider.empty")
-    lines = [t("provider.title").format(total=len(providers))]
+        return f"*{t('provider.title').split(':')[0]}*\n\n{t('provider.empty')}"
+    lines = [f"*{t('provider.title').format(total=len(providers))}*", ""]
     for prov in providers[:10]:
         hist = prov.get("billingHistory", {}) or {}
         nodes = prov.get("billingNodes", []) or []
         lines.append(
             t("provider.item").format(
-                name=prov.get("name", NA),
-                totalAmount=hist.get("totalAmount", NA),
-                totalBills=hist.get("totalBills", NA),
-                nodes=len(nodes),
+                name=f"*{prov.get('name', NA)}*",
+                totalAmount=f"`{hist.get('totalAmount', NA)}`",
+                totalBills=f"`{hist.get('totalBills', NA)}`",
+                nodes=f"`{len(nodes)}`",
             )
         )
     if len(providers) > 10:
+        lines.append("")
         lines.append(t("provider.more").format(count=len(providers) - 10))
     return "\n".join(lines)
 
@@ -414,26 +416,22 @@ def build_billing_nodes(data: dict, t: Callable[[str], str]) -> str:
     nodes = resp.get("billingNodes", []) or []
     stats = resp.get("stats", {}) or {}
     if not nodes:
-        return t("billing_nodes.empty")
+        return f"*{t('billing_nodes.title').split(':')[0]}*\n\n{t('billing_nodes.empty')}"
     lines = [
-        t("billing_nodes.title").format(total=resp.get("totalBillingNodes", len(nodes))),
-        t("billing_nodes.stats").format(
-            upcoming=stats.get("upcomingNodesCount", NA),
-            month=stats.get("currentMonthPayments", NA),
-            total=stats.get("totalSpent", NA),
-        ),
+        f"*{t('billing_nodes.title').format(total=resp.get('totalBillingNodes', len(nodes)))}*",
+        "",
+        f"*{t('billing_nodes.stats_section')}*",
+        f"  {t('billing_nodes.stats').format(upcoming=f'*{stats.get(\"upcomingNodesCount\", NA)}*', month=f'`{stats.get(\"currentMonthPayments\", NA)}`', total=f'*{stats.get(\"totalSpent\", NA)}*')}",
+        "",
+        f"*{t('billing_nodes.nodes_section')}*",
     ]
     for item in nodes[:10]:
         node = item.get("node", {})
         prov = item.get("provider", {})
         lines.append(
-            t("billing_nodes.item").format(
-                node=node.get("name", NA),
-                country=node.get("countryCode", NA),
-                provider=prov.get("name", NA),
-                next=format_datetime(item.get("nextBillingAt")),
-            )
+            f"  {t('billing_nodes.item').format(node=f'*{node.get(\"name\", NA)}*', country=f'`{node.get(\"countryCode\", NA)}`', provider=f'`{prov.get(\"name\", NA)}`', next=f'`{format_datetime(item.get(\"nextBillingAt\"))}`')}"
         )
     if len(nodes) > 10:
+        lines.append("")
         lines.append(t("billing_nodes.more").format(count=len(nodes) - 10))
     return "\n".join(lines)
