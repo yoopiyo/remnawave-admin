@@ -1752,7 +1752,13 @@ async def _apply_user_update(target: Message | CallbackQuery, user_uuid: str, pa
     try:
         await api_client.update_user(user_uuid, **payload)
         user = await api_client.get_user_by_uuid(user_uuid)
-        await _send_user_summary(target, user, back_to=back_to)
+        info = user.get("response", user)
+        text = _format_user_edit_snapshot(info, _)
+        markup = user_edit_keyboard(user_uuid, back_to=back_to)
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(text, reply_markup=markup)
+        else:
+            await _send_clean_message(target, text, reply_markup=markup)
     except UnauthorizedError:
         reply_markup = main_menu_keyboard()
         if isinstance(target, CallbackQuery):

@@ -29,10 +29,6 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text=_("user.edit_status_active"), callback_data=f"uef:status:ACTIVE:{user_uuid}"),
-                InlineKeyboardButton(text=_("user.edit_status_disabled"), callback_data=f"uef:status:DISABLED:{user_uuid}"),
-            ],
-            [
                 InlineKeyboardButton(text=_("user.edit_traffic_limit"), callback_data=f"uef:traffic::{user_uuid}"),
                 InlineKeyboardButton(text=_("user.edit_strategy"), callback_data=f"uef:strategy::{user_uuid}"),
             ],
