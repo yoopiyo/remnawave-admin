@@ -290,6 +290,7 @@
     "enable": "✅ Enable hosts (UUID list)",
     "disable": "⛔️ Disable hosts (UUID list)",
     "delete": "🗑 Delete hosts (UUID list)",
+    "list": "📄 List hosts",
     "prompt": "🖥 Send host UUIDs separated by spaces.",
     "done": "✅ Hosts bulk action done.",
     "usage": "Use: send host UUIDs separated by spaces."

@@ -1220,6 +1220,10 @@ async def cb_bulk_hosts_actions(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     action = callback.data.split(":")[-1]
+    if action == "list":
+        text = await _fetch_hosts_text()
+        await _edit_text_safe(callback.message, text, reply_markup=bulk_hosts_keyboard())
+        return
     if action == "prompt":
         await _edit_text_safe(callback.message, _("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
         return

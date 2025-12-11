@@ -12,6 +12,7 @@ def bulk_hosts_keyboard() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(text=_("bulk_hosts.disable"), callback_data="bulk:hosts:disable"),
             ],
             [InlineKeyboardButton(text=_("bulk_hosts.delete"), callback_data="bulk:hosts:delete")],
+            [InlineKeyboardButton(text=_("bulk_hosts.list"), callback_data="bulk:hosts:list")],
             [InlineKeyboardButton(text=_("bulk_hosts.prompt"), callback_data="bulk:hosts:prompt")],
             nav_row(NavTarget.BULK_MENU),
         ]
