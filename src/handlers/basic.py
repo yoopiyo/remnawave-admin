@@ -1124,7 +1124,7 @@ async def cb_template_view(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, tpl_uuid = callback.data.split(":")
+    _prefix, tpl_uuid = callback.data.split(":")
     try:
         data = await api_client.get_template(tpl_uuid)
         template = data.get("response", data)
