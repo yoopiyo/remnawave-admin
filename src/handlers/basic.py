@@ -160,6 +160,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_user_create_input(message, ctx)
     elif action == "user_edit":
         await _handle_user_edit_input(message, ctx)
+    elif action.startswith("bulk_users_"):
+        await _handle_bulk_users_input(message, ctx)
     else:
         await _send_clean_message(message, _("errors.generic"))
 
@@ -1207,8 +1209,9 @@ async def cb_bulk_prompt(callback: CallbackQuery) -> None:
         "extend": _("bulk.usage_extend"),
         "status": _("bulk.usage_status"),
     }
-    text = "\n".join([_("bulk.title"), prompt_map.get(key, _("errors.generic"))])
-    await _edit_text_safe(callback.message, text, reply_markup=bulk_users_keyboard())
+    prompt = prompt_map.get(key, _("errors.generic"))
+    PENDING_INPUT[callback.from_user.id] = {"action": f"bulk_users_{key}"}
+    await _edit_text_safe(callback.message, prompt, reply_markup=bulk_users_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:hosts:"))
@@ -1286,7 +1289,7 @@ async def _run_bulk_action(
         else:
             await _reply(target, _("errors.generic"))
             return
-        await _reply(target, _("bulk.done"), back=True)
+        await _reply(target, _("bulk.done"), back=False)
     except UnauthorizedError:
         await _reply(target, _("errors.unauthorized"))
     except ApiClientError:
@@ -1295,7 +1298,7 @@ async def _run_bulk_action(
 
 
 async def _reply(target: Message | CallbackQuery, text: str, back: bool = False) -> None:
-    markup = main_menu_keyboard() if back else None
+    markup = bulk_users_keyboard() if back else None
     if isinstance(target, CallbackQuery):
         await _edit_text_safe(target.message, text, reply_markup=markup)
     else:
@@ -1734,7 +1737,7 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
     action = ctx.get("action", "")
     uuids = message.text.split()
     if not uuids:
-        await _send_clean_message(message, _("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
+        await _send_clean_message(message, _("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
         return
     try:
         if action == "bulk_hosts_enable":
@@ -1752,6 +1755,72 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
     except ApiClientError:
         logger.exception("❌ Bulk hosts action failed")
         await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
+
+
+async def _handle_bulk_users_input(message: Message, ctx: dict) -> None:
+    action = ctx.get("action", "")
+    text = (message.text or "").strip()
+    user_id = message.from_user.id
+
+    def _reask(prompt_key: str) -> None:
+        PENDING_INPUT[user_id] = ctx
+        asyncio.create_task(_send_clean_message(message, _(prompt_key), reply_markup=bulk_users_keyboard()))
+
+    if action == "bulk_users_delete":
+        uuids = text.split()
+        if not uuids:
+            _reask("bulk.usage_delete")
+            return
+        await _run_bulk_action(message, action="delete", uuids=uuids)
+        return
+
+    if action == "bulk_users_revoke":
+        uuids = text.split()
+        if not uuids:
+            _reask("bulk.usage_revoke")
+            return
+        await _run_bulk_action(message, action="revoke", uuids=uuids)
+        return
+
+    if action == "bulk_users_reset":
+        uuids = text.split()
+        if not uuids:
+            _reask("bulk.usage_reset")
+            return
+        await _run_bulk_action(message, action="reset", uuids=uuids)
+        return
+
+    if action == "bulk_users_extend":
+        parts = text.split()
+        if len(parts) < 2:
+            _reask("bulk.usage_extend")
+            return
+        try:
+            days = int(parts[0])
+        except ValueError:
+            _reask("bulk.usage_extend")
+            return
+        uuids = parts[1:]
+        if not uuids:
+            _reask("bulk.usage_extend")
+            return
+        await _run_bulk_action(message, action="extend", uuids=uuids, days=days)
+        return
+
+    if action == "bulk_users_status":
+        parts = text.split()
+        if len(parts) < 2:
+            _reask("bulk.usage_status")
+            return
+        status = parts[0].upper()
+        uuids = parts[1:]
+        if status not in ALLOWED_STATUSES or not uuids:
+            _reask("bulk.usage_status")
+            return
+        await _run_bulk_action(message, action="status", uuids=uuids, status=status)
+        return
+
+    await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_users_keyboard())
 async def _apply_user_update(target: Message | CallbackQuery, user_uuid: str, payload: dict, back_to: str) -> None:
     try:
         await api_client.update_user(user_uuid, **payload)
