@@ -39,6 +39,7 @@ from src.keyboards.bulk_users import bulk_users_keyboard
 from src.keyboards.template_menu import template_menu_keyboard, template_list_keyboard
 from src.keyboards.bulk_hosts import bulk_hosts_keyboard
 from src.keyboards.system_nodes import system_nodes_keyboard
+from src.keyboards.stats_menu import stats_menu_keyboard
 from src.keyboards.subscription_actions import subscription_keyboard
 from src.keyboards.user_actions import user_actions_keyboard, user_edit_keyboard, user_edit_strategy_keyboard
 from src.keyboards.billing_menu import billing_menu_keyboard
@@ -181,7 +182,8 @@ async def cmd_health(message: Message) -> None:
 async def cmd_stats(message: Message) -> None:
     if await _not_admin(message):
         return
-    await _send_clean_message(message, await _fetch_stats_text(), reply_markup=system_menu_keyboard(), parse_mode="Markdown")
+    text = _("stats.menu_title")
+    await _send_clean_message(message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
 
 
 @router.message(Command("bandwidth"))
@@ -595,8 +597,25 @@ async def cb_stats(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    text = await _fetch_stats_text()
-    await _edit_text_safe(callback.message, text, reply_markup=system_menu_keyboard(), parse_mode="Markdown")
+    text = _("stats.menu_title")
+    await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
+
+
+@router.callback_query(F.data.startswith("stats:"))
+async def cb_stats_type(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    stats_type = callback.data.split(":")[-1]
+    
+    if stats_type == "panel":
+        text = await _fetch_panel_stats_text()
+        await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
+    elif stats_type == "server":
+        text = await _fetch_server_stats_text()
+        await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
+    else:
+        await callback.answer(_("errors.generic"), show_alert=True)
 
 
 @router.callback_query(F.data == "menu:find_user")
@@ -2297,6 +2316,14 @@ def _user_matches_query(user: dict, normalized_query: str) -> bool:
 
 
 def _format_user_choice(user: dict) -> str:
+    status = user.get("status", "UNKNOWN")
+    status_emoji = {
+        "ACTIVE": "✅",
+        "DISABLED": "❌",
+        "LIMITED": "🟠",
+        "EXPIRED": "⏰",
+    }.get(status, "⚙️")
+    
     username = user.get("username") or "n/a"
     username = username if username.startswith("@") else f"@{username}"
     email = user.get("email") or ""
@@ -2311,7 +2338,7 @@ def _format_user_choice(user: dict) -> str:
     if description:
         details.append(description)
 
-    label = username
+    label = f"{status_emoji} {username}"
     if details:
         label = f"{label} - {' | '.join(details)}"
     return _truncate(label, limit=64)
@@ -2763,6 +2790,151 @@ async def _fetch_health_text() -> str:
         return _("errors.unauthorized")
     except ApiClientError:
         logger.exception("⚠️ Health check failed")
+        return _("errors.generic")
+
+
+async def _fetch_panel_stats_text() -> str:
+    """Статистика панели (пользователи, ноды, хосты, ресурсы)."""
+    try:
+        # Получаем основную статистику системы
+        data = await api_client.get_stats()
+        res = data.get("response", {})
+        users = res.get("users", {})
+        online = res.get("onlineStats", {})
+        nodes = res.get("nodes", {})
+        status_counts = users.get("statusCounts", {}) or {}
+        status_str = ", ".join(f"`{k}`: *{v}*" for k, v in status_counts.items()) if status_counts else "—"
+        
+        lines = [
+            f"*{_('stats.panel_title')}*",
+            "",
+            f"*{_('stats.users_section')}*",
+            f"  {_('stats.users').format(total=users.get('totalUsers', '—'))}",
+            f"  {_('stats.status_counts').format(counts=status_str)}",
+            f"  {_('stats.online').format(now=online.get('onlineNow', '—'), day=online.get('lastDay', '—'), week=online.get('lastWeek', '—'))}",
+            "",
+            f"*{_('stats.infrastructure_section')}*",
+            f"  {_('stats.nodes').format(online=nodes.get('totalOnline', '—'))}",
+        ]
+        
+        # Добавляем статистику по хостам
+        try:
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            total_hosts = len(hosts)
+            enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
+            disabled_hosts = total_hosts - enabled_hosts
+            lines.append(f"  {_('stats.hosts').format(total=total_hosts, enabled=enabled_hosts, disabled=disabled_hosts)}")
+        except Exception:
+            lines.append(f"  {_('stats.hosts').format(total='—', enabled='—', disabled='—')}")
+        
+        # Добавляем статистику по нодам
+        try:
+            nodes_data = await api_client.get_nodes()
+            nodes_list = nodes_data.get("response", [])
+            total_nodes = len(nodes_list)
+            enabled_nodes = sum(1 for n in nodes_list if not n.get("isDisabled"))
+            disabled_nodes = total_nodes - enabled_nodes
+            online_nodes = sum(1 for n in nodes_list if n.get("isConnected"))
+            lines.append(f"  {_('stats.nodes_detailed').format(total=total_nodes, enabled=enabled_nodes, disabled=disabled_nodes, online=online_nodes)}")
+        except Exception:
+            lines.append(f"  {_('stats.nodes_detailed').format(total='—', enabled='—', disabled='—', online='—')}")
+        
+        # Добавляем статистику по ресурсам
+        lines.append("")
+        lines.append(f"*{_('stats.resources_section')}*")
+        try:
+            templates_data = await api_client.get_templates()
+            templates = templates_data.get("response", {}).get("templates", [])
+            lines.append(f"  {_('stats.templates').format(count=len(templates))}")
+        except Exception:
+            lines.append(f"  {_('stats.templates').format(count='—')}")
+        
+        try:
+            tokens_data = await api_client.get_tokens()
+            tokens = tokens_data.get("response", {}).get("apiKeys", [])
+            lines.append(f"  {_('stats.tokens').format(count=len(tokens))}")
+        except Exception:
+            lines.append(f"  {_('stats.tokens').format(count='—')}")
+        
+        try:
+            snippets_data = await api_client.get_snippets()
+            snippets = snippets_data.get("response", {}).get("snippets", [])
+            lines.append(f"  {_('stats.snippets').format(count=len(snippets))}")
+        except Exception:
+            lines.append(f"  {_('stats.snippets').format(count='—')}")
+        
+        return "\n".join(lines)
+    except UnauthorizedError:
+        return _("errors.unauthorized")
+    except ApiClientError:
+        logger.exception("⚠️ Panel stats fetch failed")
+        return _("errors.generic")
+
+
+async def _fetch_server_stats_text() -> str:
+    """Статистика сервера (CPU, RAM, нагрузка, системная информация)."""
+    try:
+        data = await api_client.get_stats()
+        res = data.get("response", {})
+        mem = res.get("memory", {})
+        cpu = res.get("cpu", {})
+        uptime = res.get("uptime", 0)
+        
+        # Вычисляем использование памяти в процентах
+        mem_total = mem.get("total", 0)
+        mem_used = mem.get("used", 0)
+        mem_percent = (mem_used / mem_total * 100) if mem_total > 0 else 0
+        
+        # Получаем дополнительную информацию о системе
+        cpu_usage = cpu.get("usage")
+        cpu_load = cpu.get("loadAverage") or cpu.get("load")
+        
+        lines = [
+            f"*{_('stats.server_title')}*",
+            "",
+            f"*{_('stats.system_section')}*",
+            f"  {_('stats.uptime').format(uptime=format_uptime(uptime))}",
+            "",
+            f"*{_('stats.cpu_section')}*",
+            f"  {_('stats.cpu').format(cores=cpu.get('cores', '—'), physical=cpu.get('physicalCores', '—'))}",
+        ]
+        
+        if cpu_usage is not None:
+            try:
+                usage_val = float(cpu_usage) if isinstance(cpu_usage, (int, float, str)) else cpu_usage
+                if isinstance(usage_val, (int, float)):
+                    lines.append(f"  {_('stats.cpu_usage').format(usage=f'{usage_val:.1f}')}")
+                else:
+                    lines.append(f"  {_('stats.cpu_usage').format(usage=cpu_usage)}")
+            except (ValueError, TypeError):
+                pass
+        
+        if cpu_load:
+            try:
+                if isinstance(cpu_load, list):
+                    load_str = ", ".join(f"`{float(load):.2f}`" for load in cpu_load[:3] if load is not None)
+                    if load_str:
+                        lines.append(f"  {_('stats.cpu_load').format(load=load_str)}")
+                elif isinstance(cpu_load, (int, float)):
+                    lines.append(f"  {_('stats.cpu_load').format(load=f'`{float(cpu_load):.2f}`')}")
+            except (ValueError, TypeError):
+                pass
+        
+        lines.append("")
+        lines.append(f"*{_('stats.memory_section')}*")
+        lines.append(f"  {_('stats.memory').format(used=format_bytes(mem_used), total=format_bytes(mem_total))}")
+        lines.append(f"  {_('stats.memory_percent').format(percent=f'{mem_percent:.1f}%')}")
+        
+        mem_free = mem_total - mem_used
+        if mem_free > 0:
+            lines.append(f"  {_('stats.memory_free').format(free=format_bytes(mem_free))}")
+        
+        return "\n".join(lines)
+    except UnauthorizedError:
+        return _("errors.unauthorized")
+    except ApiClientError:
+        logger.exception("⚠️ Server stats fetch failed")
         return _("errors.generic")
 
 
