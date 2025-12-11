@@ -39,7 +39,7 @@ class RemnawaveApiClient:
             return response.json()
         except HTTPStatusError as exc:
             status = exc.response.status_code
-            if status == 401:
+            if status in (401, 403):
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -56,7 +56,7 @@ class RemnawaveApiClient:
             return response.json()
         except HTTPStatusError as exc:
             status = exc.response.status_code
-            if status == 401:
+            if status in (401, 403):
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -73,7 +73,7 @@ class RemnawaveApiClient:
             return response.json()
         except HTTPStatusError as exc:
             status = exc.response.status_code
-            if status == 401:
+            if status in (401, 403):
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -219,7 +219,7 @@ class RemnawaveApiClient:
             return response.json()
         except HTTPStatusError as exc:
             status = exc.response.status_code
-            if status == 401:
+            if status in (401, 403):
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
