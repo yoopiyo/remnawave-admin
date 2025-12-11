@@ -286,6 +286,7 @@
   },
   "bulk_hosts": {
     "title": "📦 Bulk hosts:",
+  "overview": "🖥 Bulk hosts:\nPick an action, then send host UUIDs separated by space or newline.",
     "enable": "✅ Enable hosts (UUID list)",
     "disable": "⛔️ Disable hosts (UUID list)",
     "delete": "🗑 Delete hosts (UUID list)",
@@ -295,6 +296,7 @@
   },
   "bulk": {
     "title": "📦 Bulk actions:",
+  "overview": "📦 Bulk for users:\n• Quick: reset all, delete expired, extend all +7/+30.\n• Lists: /bulk_delete <uuid...>, /bulk_revoke <uuid...>, /bulk_reset <uuid...>, /bulk_extend <days> <uuid...>, /bulk_status <STATUS> <uuid...>.\n• Statuses: ACTIVE/DISABLED/LIMITED/EXPIRED. UUID separated by spaces or newlines.",
     "reset_all_traffic": "🔁 Reset traffic for all",
     "delete_expired": "🗑 Delete expired",
     "extend_all_7": "⏳ Extend all +7d",
@@ -317,6 +319,7 @@
   },
   "bulk_nodes": {
     "title": "📦 Bulk nodes:",
+  "overview": "🛰 Bulk nodes:\nFirst choose profile+inbounds, then send node UUIDs as a list.",
     "profile": "🔗 Assign profile+inbounds",
     "prompt": "Send: <profile_uuid> <inbound_uuid1> <inbound_uuid2> ... | then node UUIDs separated by spaces.",
     "prompt_profile": "First profile UUID then inbound UUIDs separated by spaces.",

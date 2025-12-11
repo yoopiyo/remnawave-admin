@@ -725,7 +725,7 @@ async def cb_bulk_hosts(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    await callback.message.edit_text(_("bulk_hosts.title"), reply_markup=bulk_hosts_keyboard())
+    await _edit_text_safe(callback.message, _("bulk_hosts.overview"), reply_markup=bulk_hosts_keyboard())
 
 
 @router.callback_query(F.data == "menu:bulk_nodes")
@@ -733,7 +733,7 @@ async def cb_bulk_nodes(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    await callback.message.edit_text(_("bulk_nodes.title"), reply_markup=bulk_nodes_keyboard())
+    await _edit_text_safe(callback.message, _("bulk_nodes.overview"), reply_markup=bulk_nodes_keyboard())
 
 
 @router.callback_query(F.data == "menu:bulk_users")
@@ -741,7 +741,7 @@ async def cb_bulk_users(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    await callback.message.edit_text(_("bulk.title"), reply_markup=bulk_users_keyboard())
+    await _edit_text_safe(callback.message, _("bulk.overview"), reply_markup=bulk_users_keyboard())
 
 
 @router.callback_query(F.data.startswith("providers:"))
@@ -1168,21 +1168,7 @@ async def cb_bulk_users_actions(callback: CallbackQuery) -> None:
     parts = callback.data.split(":")
     action = parts[2] if len(parts) > 2 else None
     if action == "usage":
-        await callback.message.edit_text(
-            "\n".join(
-                [
-                    _("bulk.title"),
-                    _("bulk.usage_delete_status"),
-                    _("bulk.usage_delete"),
-                    _("bulk.usage_revoke"),
-                    _("bulk.usage_reset"),
-                    _("bulk.usage_extend"),
-                    _("bulk.usage_extend_all"),
-                    _("bulk.usage_status"),
-                ]
-            ),
-            reply_markup=bulk_users_keyboard(),
-        )
+        await _edit_text_safe(callback.message, _("bulk.overview"), reply_markup=bulk_users_keyboard())
         return
     try:
         if action == "reset":
@@ -1200,12 +1186,12 @@ async def cb_bulk_users_actions(callback: CallbackQuery) -> None:
         else:
             await callback.answer(_("errors.generic"), show_alert=True)
             return
-        await callback.message.edit_text(_("bulk.done"), reply_markup=main_menu_keyboard())
+        await _edit_text_safe(callback.message, _("bulk.done"), reply_markup=main_menu_keyboard())
     except UnauthorizedError:
-        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())
+        await _edit_text_safe(callback.message, _("errors.unauthorized"), reply_markup=main_menu_keyboard())
     except ApiClientError:
         logger.exception("❌ Bulk users action failed action=%s", action)
-        await callback.message.edit_text(_("bulk.error"), reply_markup=main_menu_keyboard())
+        await _edit_text_safe(callback.message, _("bulk.error"), reply_markup=main_menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:prompt:"))
@@ -1222,7 +1208,7 @@ async def cb_bulk_prompt(callback: CallbackQuery) -> None:
         "status": _("bulk.usage_status"),
     }
     text = "\n".join([_("bulk.title"), prompt_map.get(key, _("errors.generic"))])
-    await callback.message.edit_text(text, reply_markup=bulk_users_keyboard())
+    await _edit_text_safe(callback.message, text, reply_markup=bulk_users_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:hosts:"))
@@ -1232,11 +1218,11 @@ async def cb_bulk_hosts_actions(callback: CallbackQuery) -> None:
     await callback.answer()
     action = callback.data.split(":")[-1]
     if action == "prompt":
-        await callback.message.edit_text(_("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
+        await _edit_text_safe(callback.message, _("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
         return
     # Expect user to send UUIDs next
     PENDING_INPUT[callback.from_user.id] = {"action": f"bulk_hosts_{action}"}
-    await callback.message.edit_text(_("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
+    await _edit_text_safe(callback.message, _("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:nodes:"))
@@ -1247,9 +1233,9 @@ async def cb_bulk_nodes_actions(callback: CallbackQuery) -> None:
     action = callback.data.split(":")[-1]
     if action == "profile":
         PENDING_INPUT[callback.from_user.id] = {"action": "bulk_nodes_profile", "stage": "profile"}
-        await callback.message.edit_text(_("bulk_nodes.prompt_profile"), reply_markup=bulk_nodes_keyboard())
+        await _edit_text_safe(callback.message, _("bulk_nodes.prompt_profile"), reply_markup=bulk_nodes_keyboard())
     else:
-        await callback.message.edit_text(_("errors.generic"), reply_markup=bulk_nodes_keyboard())
+        await _edit_text_safe(callback.message, _("errors.generic"), reply_markup=bulk_nodes_keyboard())
 
 
 # Bulk helpers
@@ -1311,7 +1297,7 @@ async def _run_bulk_action(
 async def _reply(target: Message | CallbackQuery, text: str, back: bool = False) -> None:
     markup = main_menu_keyboard() if back else None
     if isinstance(target, CallbackQuery):
-        await target.message.edit_text(text, reply_markup=markup)
+        await _edit_text_safe(target.message, text, reply_markup=markup)
     else:
         await _send_clean_message(target, text, reply_markup=markup)
 
