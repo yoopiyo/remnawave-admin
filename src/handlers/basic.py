@@ -1,5 +1,6 @@
 import asyncio
 import re
+from typing import Callable
 
 from aiogram import F, Router
 from aiogram.filters import Command
