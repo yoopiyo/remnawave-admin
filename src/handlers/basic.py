@@ -921,7 +921,7 @@ async def cb_user_edit_menu(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, user_uuid = callback.data.split(":")
+    _prefix, user_uuid = callback.data.split(":")
     back_to = _get_user_detail_back_target(callback.from_user.id)
     await callback.message.edit_text(
         _("user.edit_prompt"),
@@ -941,7 +941,7 @@ async def cb_user_edit_field(callback: CallbackQuery) -> None:
     if len(parts) < 3:
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
         return
-    _, field = parts[0], parts[1]
+    _prefix, field = parts[0], parts[1]
     value = None
     user_uuid = parts[-1]
     if len(parts) == 4:
