@@ -432,8 +432,12 @@ def build_billing_nodes(data: dict, t: Callable[[str], str]) -> str:
     for item in nodes[:10]:
         node = item.get("node", {})
         prov = item.get("provider", {})
+        node_name = node.get("name", NA)
+        country_code = node.get("countryCode", NA)
+        provider_name = prov.get("name", NA)
+        next_billing = format_datetime(item.get("nextBillingAt"))
         lines.append(
-            f"  {t('billing_nodes.item').format(node=f'*{node.get(\"name\", NA)}*', country=f'`{node.get(\"countryCode\", NA)}`', provider=f'`{prov.get(\"name\", NA)}`', next=f'`{format_datetime(item.get(\"nextBillingAt\"))}`')}"
+            f"  {t('billing_nodes.item').format(node=f'*{node_name}*', country=f'`{country_code}`', provider=f'`{provider_name}`', next=f'`{next_billing}`')}"
         )
     if len(nodes) > 10:
         lines.append("")
