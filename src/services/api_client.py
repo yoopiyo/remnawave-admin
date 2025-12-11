@@ -66,6 +66,23 @@ class RemnawaveApiClient:
             logger.warning("HTTP client error on POST %s: %s", url, exc)
             raise ApiClientError from exc
 
+    async def _patch(self, url: str, json: dict | None = None) -> dict:
+        try:
+            response = await self._client.patch(url, json=json)
+            response.raise_for_status()
+            return response.json()
+        except HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status == 401:
+                raise UnauthorizedError from exc
+            if status == 404:
+                raise NotFoundError from exc
+            logger.warning("API error %s on PATCH %s: %s", status, url, exc.response.text)
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            logger.warning("HTTP client error on PATCH %s: %s", url, exc)
+            raise ApiClientError from exc
+
     # --- Settings ---
     async def get_settings(self) -> dict:
         return await self._get("/api/remnawave-settings")
@@ -83,6 +100,11 @@ class RemnawaveApiClient:
 
     async def get_users(self, start: int = 0, size: int = 100) -> dict:
         return await self._get(f"/api/users?start={start}&size={size}")
+
+    async def update_user(self, user_uuid: str, **fields) -> dict:
+        payload = {"uuid": user_uuid}
+        payload.update({k: v for k, v in fields.items() if v is not None})
+        return await self._patch("/api/users", json=payload)
 
     async def disable_user(self, user_uuid: str) -> dict:
         return await self._post(f"/api/users/{user_uuid}/actions/disable")

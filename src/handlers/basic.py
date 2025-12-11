@@ -1,4 +1,5 @@
 import asyncio
+import re
 
 from aiogram import F, Router
 from aiogram.filters import Command
@@ -37,7 +38,7 @@ from src.keyboards.template_menu import template_menu_keyboard
 from src.keyboards.bulk_hosts import bulk_hosts_keyboard
 from src.keyboards.bulk_nodes import bulk_nodes_keyboard
 from src.keyboards.subscription_actions import subscription_keyboard
-from src.keyboards.user_actions import user_actions_keyboard
+from src.keyboards.user_actions import user_actions_keyboard, user_edit_keyboard
 from src.keyboards.billing_menu import billing_menu_keyboard
 from src.keyboards.billing_nodes_menu import billing_nodes_menu_keyboard
 from src.keyboards.providers_menu import providers_menu_keyboard
@@ -155,6 +156,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_billing_nodes_input(message, ctx)
     elif action == "user_create":
         await _handle_user_create_input(message, ctx)
+    elif action == "user_edit":
+        await _handle_user_edit_input(message, ctx)
     else:
         await _send_clean_message(message, _("errors.generic"))
 
@@ -856,7 +859,7 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, user_uuid = callback.data.split(":")
+    _prefix, user_uuid = callback.data.split(":")
     back_to = _get_user_detail_back_target(callback.from_user.id)
     try:
         data = await api_client.get_config_profiles()
@@ -883,7 +886,7 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, user_uuid, action = callback.data.split(":")
+    _prefix, user_uuid, action = callback.data.split(":")
     back_to = _get_user_detail_back_target(callback.from_user.id)
     try:
         if action == "enable":
@@ -913,12 +916,74 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
+@router.callback_query(F.data.startswith("user_edit:"))
+async def cb_user_edit_menu(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    _, user_uuid = callback.data.split(":")
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    await callback.message.edit_text(
+        _("user.edit_prompt"),
+        reply_markup=user_edit_keyboard(user_uuid, back_to=back_to),
+    )
+
+
+@router.callback_query(F.data.startswith("user_edit_field:"))
+async def cb_user_edit_field(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    # patterns:
+    # user_edit_field:status:ACTIVE:{uuid}
+    # user_edit_field:{field}:{uuid}
+    if len(parts) < 3:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
+        return
+    _, field = parts[0], parts[1]
+    value = None
+    user_uuid = parts[-1]
+    if len(parts) == 4:
+        value = parts[2]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+
+    if field == "status" and value:
+        await _apply_user_update(callback, user_uuid, {"status": value}, back_to=back_to)
+        return
+    if field == "strategy" and value:
+        await _apply_user_update(callback, user_uuid, {"trafficLimitStrategy": value}, back_to=back_to)
+        return
+
+    prompt_map = {
+        "traffic": _("user.edit_prompt_traffic"),
+        "strategy": _("user.edit_prompt_strategy"),
+        "expire": _("user.edit_prompt_expire"),
+        "hwid": _("user.edit_prompt_hwid"),
+        "description": _("user.edit_prompt_description"),
+        "tag": _("user.edit_prompt_tag"),
+        "telegram": _("user.edit_prompt_telegram"),
+        "email": _("user.edit_prompt_email"),
+    }
+    prompt = prompt_map.get(field, _("errors.generic"))
+    if prompt == _("errors.generic"):
+        await callback.message.edit_text(prompt, reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
+        return
+
+    PENDING_INPUT[callback.from_user.id] = {
+        "action": "user_edit",
+        "field": field,
+        "uuid": user_uuid,
+        "back_to": back_to,
+    }
+    await callback.message.edit_text(prompt, reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
+
 @router.callback_query(F.data.startswith("node:"))
 async def cb_node_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, node_uuid, action = callback.data.split(":")
+    _prefix, node_uuid, action = callback.data.split(":")
     try:
         if action == "enable":
             await api_client.enable_node(node_uuid)
@@ -946,7 +1011,7 @@ async def cb_host_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, host_uuid, action = callback.data.split(":")
+    _prefix, host_uuid, action = callback.data.split(":")
     try:
         if action == "enable":
             await api_client.enable_hosts([host_uuid])
@@ -970,7 +1035,7 @@ async def cb_token_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, token_uuid, action = callback.data.split(":")
+    _prefix, token_uuid, action = callback.data.split(":")
     try:
         if action == "delete":
             await api_client.delete_token(token_uuid)
@@ -1001,7 +1066,7 @@ async def cb_template_actions(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("template.prompt_reorder"), reply_markup=template_menu_keyboard())
         return
 
-    _, tpl_uuid, action = parts
+    _prefix, tpl_uuid, action = parts
     try:
         if action == "delete":
             await api_client.delete_template(tpl_uuid)
@@ -1026,7 +1091,7 @@ async def cb_snippet_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, name, action = callback.data.split(":")
+    _prefix, name, action = callback.data.split(":")
     try:
         if action == "delete":
             await api_client.delete_snippet(name)
@@ -1203,7 +1268,7 @@ async def cb_config_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    _, config_uuid, action = callback.data.split(":")
+    _prefix, config_uuid, action = callback.data.split(":")
     if action != "view":
         await callback.answer(_("errors.generic"), show_alert=True)
         return
@@ -1648,8 +1713,112 @@ async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
     except ApiClientError:
         logger.exception("❌ Bulk hosts action failed")
         await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
+async def _apply_user_update(target: Message | CallbackQuery, user_uuid: str, payload: dict, back_to: str) -> None:
+    try:
+        await api_client.update_user(user_uuid, **payload)
+        user = await api_client.get_user_by_uuid(user_uuid)
+        await _send_user_summary(target, user, back_to=back_to)
+    except UnauthorizedError:
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("errors.unauthorized"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("errors.unauthorized"), reply_markup=reply_markup)
+    except NotFoundError:
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("user.not_found"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("user.not_found"), reply_markup=reply_markup)
+    except ApiClientError:
+        logger.exception("❌ User update failed user_uuid=%s payload_keys=%s", user_uuid, list(payload.keys()))
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("errors.generic"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("errors.generic"), reply_markup=reply_markup)
 
 
+async def _handle_user_edit_input(message: Message, ctx: dict) -> None:
+    user_uuid = ctx.get("uuid")
+    field = ctx.get("field")
+    back_to = ctx.get("back_to", NavTarget.USERS_MENU)
+    text = (message.text or "").strip()
+
+    if not user_uuid or not field:
+        await _send_clean_message(message, _("errors.generic"), reply_markup=nav_keyboard(back_to))
+        return
+
+    def _set_retry(prompt_key: str) -> None:
+        PENDING_INPUT[message.from_user.id] = ctx
+        asyncio.create_task(
+            _send_clean_message(
+                message,
+                _(prompt_key),
+                reply_markup=user_edit_keyboard(user_uuid, back_to=back_to),
+            )
+        )
+
+    payload: dict[str, object | None] = {}
+
+    if field == "traffic":
+        try:
+            limit = int(text)
+            if limit < 0:
+                raise ValueError
+            payload["trafficLimitBytes"] = limit
+        except ValueError:
+            _set_retry("user.edit_invalid_number")
+            return
+    elif field == "strategy":
+        strategy = text.upper()
+        if strategy not in {"NO_RESET", "DAY", "WEEK", "MONTH"}:
+            _set_retry("user.edit_invalid_strategy")
+            return
+        payload["trafficLimitStrategy"] = strategy
+    elif field == "expire":
+        try:
+            datetime.fromisoformat(text.replace("Z", "+00:00"))
+        except Exception:
+            _set_retry("user.edit_invalid_expire")
+            return
+        payload["expireAt"] = text
+    elif field == "hwid":
+        try:
+            hwid = int(text)
+            if hwid < 0:
+                raise ValueError
+            payload["hwidDeviceLimit"] = hwid
+        except ValueError:
+            _set_retry("user.edit_invalid_number")
+            return
+    elif field == "description":
+        payload["description"] = text or None
+    elif field == "tag":
+        tag = text.strip().upper()
+        if tag in {"", "-"}:
+            payload["tag"] = None
+        elif not re.fullmatch(r"[A-Z0-9_]{1,16}", tag):
+            _set_retry("user.edit_invalid_tag")
+            return
+        else:
+            payload["tag"] = tag
+    elif field == "telegram":
+        if text in {"", "-"}:
+            payload["telegramId"] = None
+        else:
+            try:
+                payload["telegramId"] = int(text)
+            except ValueError:
+                _set_retry("user.edit_invalid_number")
+                return
+    elif field == "email":
+        payload["email"] = None if text in {"", "-"} else text
+    else:
+        await _send_clean_message(message, _("errors.generic"), reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
+        return
+
+    await _apply_user_update(message, user_uuid, payload, back_to=back_to)
 
 
 def _get_target_user_id(target: Message | CallbackQuery) -> int | None:
