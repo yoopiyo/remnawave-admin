@@ -28,6 +28,8 @@ Telegram-бот для управления панелью Remnawave. Подде
 1. **Клонируйте репозиторий:**
    ```bash
    git clone https://github.com/case211/remnawave-admin.git
+   ```
+   ```bash
    cd remnawave-admin
    ```
 
@@ -39,7 +41,6 @@ Telegram-бот для управления панелью Remnawave. Подде
 3. **Отредактируйте файл `.env`:**
    ```bash
    nano .env
-   # или используйте ваш любимый редактор
    ```
 
    Обязательные переменные:
@@ -54,7 +55,7 @@ Telegram-бот для управления панелью Remnawave. Подде
 
    **Для развертывания в Docker** используйте:
    - `API_BASE_URL=http://remnawave:3000` (если бот в той же Docker-сети)
-   - `API_BASE_URL=https://ваш-домен-панели.com` (если бот внешний)
+   - `API_BASE_URL=https://ваш-домен-панели.com/api` (если бот внешний)
 
 4. **Разверните с помощью Docker Compose:**
    ```bash
@@ -106,8 +107,8 @@ Telegram-бот для управления панелью Remnawave. Подде
 |------------|-------------|--------------|----------|
 | `BOT_TOKEN` | Да | - | Токен Telegram-бота от @BotFather |
 | `API_BASE_URL` | Да | - | Базовый URL API Remnawave |
-| `API_TOKEN` | Нет | - | Токен аутентификации API |
-| `ADMINS` | Нет | - | Список ID пользователей Telegram через запятую |
+| `API_TOKEN` | Да | - | Токен аутентификации API |
+| `ADMINS` | Да | - | Список ID пользователей Telegram через запятую |
 | `DEFAULT_LOCALE` | Нет | `ru` | Язык по умолчанию (`ru` или `en`) |
 | `LOG_LEVEL` | Нет | `INFO` | Уровень логирования (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 

@@ -1,6 +1,6 @@
 # Remnawave Admin Bot
 
-Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline buttons, Docker Compose deployment, and automatic image builds via GitHub Actions.
+Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline buttons, Docker Compose deployment.
 
 ## Features
 
@@ -28,6 +28,8 @@ Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline b
 1. **Clone the repository:**
    ```bash
    git clone https://github.com/case211/remnawave-admin.git
+   ```
+   ```bash
    cd remnawave-admin
    ```
 
@@ -39,7 +41,6 @@ Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline b
 3. **Edit `.env` file:**
    ```bash
    nano .env
-   # or use your preferred editor
    ```
 
    Required variables:
@@ -54,7 +55,7 @@ Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline b
 
    **For Docker deployment**, use:
    - `API_BASE_URL=http://remnawave:3000` (if bot is in the same Docker network)
-   - `API_BASE_URL=https://your-panel-domain.com` (if bot is external)
+   - `API_BASE_URL=https://your-panel-domain.com/api` (if bot is external)
 
 4. **Deploy with Docker Compose:**
    ```bash
@@ -106,8 +107,8 @@ Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline b
 |----------|----------|---------|-------------|
 | `BOT_TOKEN` | Yes | - | Telegram bot token from @BotFather |
 | `API_BASE_URL` | Yes | - | Remnawave API base URL |
-| `API_TOKEN` | No | - | API authentication token |
-| `ADMINS` | No | - | Comma-separated list of Telegram user IDs |
+| `API_TOKEN` | Yes | - | API authentication token |
+| `ADMINS` | Yes | - | Comma-separated list of Telegram user IDs |
 | `DEFAULT_LOCALE` | No | `ru` | Default language (`ru` or `en`) |
 | `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 
