@@ -146,8 +146,6 @@ async def handle_pending(message: Message) -> None:
         await _handle_template_update_json_input(message, ctx)
     elif action == "template_reorder":
         await _handle_template_reorder_input(message, ctx)
-    elif action.startswith("bulk_hosts_"):
-        await _handle_bulk_hosts_input(message, ctx)
     elif action.startswith("bulk_nodes_"):
         await _handle_bulk_nodes_input(message, ctx)
     elif action.startswith("provider_"):
@@ -1169,49 +1167,36 @@ async def cb_bulk_users_actions(callback: CallbackQuery) -> None:
     await callback.answer()
     parts = callback.data.split(":")
     action = parts[2] if len(parts) > 2 else None
-    if action == "usage":
-        await _edit_text_safe(callback.message, _("bulk.overview"), reply_markup=bulk_users_keyboard())
-        return
     try:
         if action == "reset":
             await api_client.bulk_reset_traffic_all_users()
+            await _edit_text_safe(callback.message, _("bulk.done"), reply_markup=bulk_users_keyboard())
         elif action == "delete" and len(parts) > 3:
             status = parts[3]
             await api_client.bulk_delete_users_by_status(status)
+            await _edit_text_safe(callback.message, _("bulk.done"), reply_markup=bulk_users_keyboard())
         elif action == "extend_all" and len(parts) > 3:
             try:
                 days = int(parts[3])
             except ValueError:
-                await callback.message.edit_text(_("bulk.usage_extend_all"), reply_markup=bulk_users_keyboard())
+                await callback.answer(_("errors.generic"), show_alert=True)
                 return
             await api_client.bulk_extend_all_users(days)
+            await _edit_text_safe(callback.message, _("bulk.done"), reply_markup=bulk_users_keyboard())
+        elif action == "extend_active":
+            # Запрашиваем количество дней
+            PENDING_INPUT[callback.from_user.id] = {"action": "bulk_users_extend_active"}
+            await _edit_text_safe(callback.message, _("bulk.prompt_extend_active"), reply_markup=bulk_users_keyboard())
         else:
             await callback.answer(_("errors.generic"), show_alert=True)
             return
-        await _edit_text_safe(callback.message, _("bulk.done"), reply_markup=main_menu_keyboard())
     except UnauthorizedError:
-        await _edit_text_safe(callback.message, _("errors.unauthorized"), reply_markup=main_menu_keyboard())
+        await _edit_text_safe(callback.message, _("errors.unauthorized"), reply_markup=bulk_users_keyboard())
     except ApiClientError:
         logger.exception("❌ Bulk users action failed action=%s", action)
-        await _edit_text_safe(callback.message, _("bulk.error"), reply_markup=main_menu_keyboard())
+        await _edit_text_safe(callback.message, _("bulk.error"), reply_markup=bulk_users_keyboard())
 
 
-@router.callback_query(F.data.startswith("bulk:prompt:"))
-async def cb_bulk_prompt(callback: CallbackQuery) -> None:
-    if await _not_admin(callback):
-        return
-    await callback.answer()
-    key = callback.data.split(":")[-1]
-    prompt_map = {
-        "delete": _("bulk.usage_delete"),
-        "revoke": _("bulk.usage_revoke"),
-        "reset": _("bulk.usage_reset"),
-        "extend": _("bulk.usage_extend"),
-        "status": _("bulk.usage_status"),
-    }
-    prompt = prompt_map.get(key, _("errors.generic"))
-    PENDING_INPUT[callback.from_user.id] = {"action": f"bulk_users_{key}"}
-    await _edit_text_safe(callback.message, prompt, reply_markup=bulk_users_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:hosts:"))
@@ -1224,12 +1209,36 @@ async def cb_bulk_hosts_actions(callback: CallbackQuery) -> None:
         text = await _fetch_hosts_text()
         await _edit_text_safe(callback.message, text, reply_markup=bulk_hosts_keyboard())
         return
-    if action == "prompt":
-        await _edit_text_safe(callback.message, _("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
-        return
-    # Expect user to send UUIDs next
-    PENDING_INPUT[callback.from_user.id] = {"action": f"bulk_hosts_{action}"}
-    await _edit_text_safe(callback.message, _("bulk_hosts.usage"), reply_markup=bulk_hosts_keyboard())
+    try:
+        if action == "enable_all":
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            uuids = [h.get("uuid") for h in hosts if h.get("uuid")]
+            if uuids:
+                await api_client.bulk_enable_hosts(uuids)
+            await _edit_text_safe(callback.message, _("bulk_hosts.done"), reply_markup=bulk_hosts_keyboard())
+        elif action == "disable_all":
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            uuids = [h.get("uuid") for h in hosts if h.get("uuid")]
+            if uuids:
+                await api_client.bulk_disable_hosts(uuids)
+            await _edit_text_safe(callback.message, _("bulk_hosts.done"), reply_markup=bulk_hosts_keyboard())
+        elif action == "delete_disabled":
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            uuids = [h.get("uuid") for h in hosts if h.get("uuid") and h.get("isDisabled")]
+            if uuids:
+                await api_client.bulk_delete_hosts(uuids)
+            await _edit_text_safe(callback.message, _("bulk_hosts.done"), reply_markup=bulk_hosts_keyboard())
+        else:
+            await callback.answer(_("errors.generic"), show_alert=True)
+            return
+    except UnauthorizedError:
+        await _edit_text_safe(callback.message, _("errors.unauthorized"), reply_markup=bulk_hosts_keyboard())
+    except ApiClientError:
+        logger.exception("❌ Bulk hosts action failed action=%s", action)
+        await _edit_text_safe(callback.message, _("bulk_hosts.error"), reply_markup=bulk_hosts_keyboard())
 
 
 @router.callback_query(F.data.startswith("bulk:nodes:"))
@@ -1737,28 +1746,6 @@ async def _handle_bulk_nodes_input(message: Message, ctx: dict) -> None:
         await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_nodes_keyboard())
 
 
-async def _handle_bulk_hosts_input(message: Message, ctx: dict) -> None:
-    action = ctx.get("action", "")
-    uuids = message.text.split()
-    if not uuids:
-        await _send_clean_message(message, _("bulk_hosts.prompt"), reply_markup=bulk_hosts_keyboard())
-        return
-    try:
-        if action == "bulk_hosts_enable":
-            await api_client.bulk_enable_hosts(uuids)
-        elif action == "bulk_hosts_disable":
-            await api_client.bulk_disable_hosts(uuids)
-        elif action == "bulk_hosts_delete":
-            await api_client.bulk_delete_hosts(uuids)
-        else:
-            await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
-            return
-        await _send_clean_message(message, _("bulk_hosts.done"), reply_markup=main_menu_keyboard())
-    except UnauthorizedError:
-        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=bulk_hosts_keyboard())
-    except ApiClientError:
-        logger.exception("❌ Bulk hosts action failed")
-        await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_hosts_keyboard())
 
 
 async def _handle_bulk_users_input(message: Message, ctx: dict) -> None:
@@ -1770,58 +1757,37 @@ async def _handle_bulk_users_input(message: Message, ctx: dict) -> None:
         PENDING_INPUT[user_id] = ctx
         asyncio.create_task(_send_clean_message(message, _(prompt_key), reply_markup=bulk_users_keyboard()))
 
-    if action == "bulk_users_delete":
-        uuids = text.split()
-        if not uuids:
-            _reask("bulk.usage_delete")
-            return
-        await _run_bulk_action(message, action="delete", uuids=uuids)
-        return
-
-    if action == "bulk_users_revoke":
-        uuids = text.split()
-        if not uuids:
-            _reask("bulk.usage_revoke")
-            return
-        await _run_bulk_action(message, action="revoke", uuids=uuids)
-        return
-
-    if action == "bulk_users_reset":
-        uuids = text.split()
-        if not uuids:
-            _reask("bulk.usage_reset")
-            return
-        await _run_bulk_action(message, action="reset", uuids=uuids)
-        return
-
-    if action == "bulk_users_extend":
-        parts = text.split()
-        if len(parts) < 2:
-            _reask("bulk.usage_extend")
-            return
+    if action == "bulk_users_extend_active":
         try:
-            days = int(parts[0])
+            days = int(text)
+            if days <= 0:
+                _reask("bulk.prompt_extend_active")
+                return
         except ValueError:
-            _reask("bulk.usage_extend")
+            _reask("bulk.prompt_extend_active")
             return
-        uuids = parts[1:]
-        if not uuids:
-            _reask("bulk.usage_extend")
-            return
-        await _run_bulk_action(message, action="extend", uuids=uuids, days=days)
-        return
-
-    if action == "bulk_users_status":
-        parts = text.split()
-        if len(parts) < 2:
-            _reask("bulk.usage_status")
-            return
-        status = parts[0].upper()
-        uuids = parts[1:]
-        if status not in ALLOWED_STATUSES or not uuids:
-            _reask("bulk.usage_status")
-            return
-        await _run_bulk_action(message, action="status", uuids=uuids, status=status)
+        
+        try:
+            # Получаем всех активных пользователей
+            users_data = await api_client.get_users(start=0, size=1000)
+            users = users_data.get("response", users_data).get("users", [])
+            active_uuids = [u.get("uuid") for u in users if u.get("uuid") and u.get("status") == "ACTIVE"]
+            
+            if not active_uuids:
+                await _send_clean_message(message, _("bulk.no_active_users"), reply_markup=bulk_users_keyboard())
+                return
+            
+            # Продлеваем активным
+            await api_client.bulk_extend_users(active_uuids, days)
+            await _send_clean_message(message, _("bulk.done"), reply_markup=bulk_users_keyboard())
+            del PENDING_INPUT[user_id]
+        except UnauthorizedError:
+            await _send_clean_message(message, _("errors.unauthorized"), reply_markup=bulk_users_keyboard())
+            del PENDING_INPUT[user_id]
+        except ApiClientError:
+            logger.exception("❌ Bulk extend active users failed")
+            await _send_clean_message(message, _("bulk.error"), reply_markup=bulk_users_keyboard())
+            del PENDING_INPUT[user_id]
         return
 
     await _send_clean_message(message, _("errors.generic"), reply_markup=bulk_users_keyboard())
