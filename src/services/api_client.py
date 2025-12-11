@@ -259,7 +259,21 @@ class RemnawaveApiClient:
             payload["name"] = name
         if template_json is not None:
             payload["templateJson"] = template_json
-        return await self._client.patch("/api/subscription-templates", json=payload).json()
+        try:
+            response = await self._client.patch("/api/subscription-templates", json=payload)
+            response.raise_for_status()
+            return response.json()
+        except HTTPStatusError as exc:
+            status = exc.response.status_code
+            if status in (401, 403):
+                raise UnauthorizedError from exc
+            if status == 404:
+                raise NotFoundError from exc
+            logger.warning("API error %s on PATCH /api/subscription-templates: %s", status, exc.response.text)
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            logger.warning("HTTP client error on PATCH /api/subscription-templates: %s", exc)
+            raise ApiClientError from exc
 
     async def reorder_templates(self, uuids_in_order: list[str]) -> dict:
         items = [{"uuid": uuid, "viewPosition": idx + 1} for idx, uuid in enumerate(uuids_in_order)]
