@@ -37,12 +37,6 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
                 InlineKeyboardButton(text=_("user.edit_strategy"), callback_data=f"uef:strategy::{user_uuid}"),
             ],
             [
-                InlineKeyboardButton(text="NO_RESET", callback_data=f"uef:strategy:NO_RESET:{user_uuid}"),
-                InlineKeyboardButton(text="DAY", callback_data=f"uef:strategy:DAY:{user_uuid}"),
-                InlineKeyboardButton(text="WEEK", callback_data=f"uef:strategy:WEEK:{user_uuid}"),
-                InlineKeyboardButton(text="MONTH", callback_data=f"uef:strategy:MONTH:{user_uuid}"),
-            ],
-            [
                 InlineKeyboardButton(text=_("user.edit_expire"), callback_data=f"uef:expire::{user_uuid}"),
                 InlineKeyboardButton(text=_("user.edit_hwid"), callback_data=f"uef:hwid::{user_uuid}"),
             ],
@@ -53,6 +47,22 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
             [
                 InlineKeyboardButton(text=_("user.edit_telegram"), callback_data=f"uef:telegram::{user_uuid}"),
                 InlineKeyboardButton(text=_("user.edit_email"), callback_data=f"uef:email::{user_uuid}"),
+            ],
+            nav_row(back_to),
+        ]
+    )
+
+
+def user_edit_strategy_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> InlineKeyboardMarkup:
+    return InlineKeyboardMarkup(
+        inline_keyboard=[
+            [
+                InlineKeyboardButton(text="NO_RESET", callback_data=f"uef:strategy:NO_RESET:{user_uuid}"),
+                InlineKeyboardButton(text="DAY", callback_data=f"uef:strategy:DAY:{user_uuid}"),
+            ],
+            [
+                InlineKeyboardButton(text="WEEK", callback_data=f"uef:strategy:WEEK:{user_uuid}"),
+                InlineKeyboardButton(text="MONTH", callback_data=f"uef:strategy:MONTH:{user_uuid}"),
             ],
             nav_row(back_to),
         ]

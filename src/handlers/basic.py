@@ -38,7 +38,7 @@ from src.keyboards.template_menu import template_menu_keyboard
 from src.keyboards.bulk_hosts import bulk_hosts_keyboard
 from src.keyboards.bulk_nodes import bulk_nodes_keyboard
 from src.keyboards.subscription_actions import subscription_keyboard
-from src.keyboards.user_actions import user_actions_keyboard, user_edit_keyboard
+from src.keyboards.user_actions import user_actions_keyboard, user_edit_keyboard, user_edit_strategy_keyboard
 from src.keyboards.billing_menu import billing_menu_keyboard
 from src.keyboards.billing_nodes_menu import billing_nodes_menu_keyboard
 from src.keyboards.providers_menu import providers_menu_keyboard
@@ -952,10 +952,15 @@ async def cb_user_edit_field(callback: CallbackQuery) -> None:
     if field == "strategy" and value:
         await _apply_user_update(callback, user_uuid, {"trafficLimitStrategy": value}, back_to=back_to)
         return
+    if field == "strategy" and not value:
+        await callback.message.edit_text(
+            _("user.edit_prompt_strategy"),
+            reply_markup=user_edit_strategy_keyboard(user_uuid, back_to=back_to),
+        )
+        return
 
     prompt_map = {
         "traffic": _("user.edit_prompt_traffic"),
-        "strategy": _("user.edit_prompt_strategy"),
         "expire": _("user.edit_prompt_expire"),
         "hwid": _("user.edit_prompt_hwid"),
         "description": _("user.edit_prompt_description"),
