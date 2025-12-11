@@ -929,23 +929,21 @@ async def cb_user_edit_menu(callback: CallbackQuery) -> None:
     )
 
 
-@router.callback_query(F.data.startswith("user_edit_field:"))
+@router.callback_query(F.data.startswith("uef:"))
 async def cb_user_edit_field(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
     parts = callback.data.split(":")
     # patterns:
-    # user_edit_field:status:ACTIVE:{uuid}
-    # user_edit_field:{field}:{uuid}
+    # uef:status:ACTIVE:{uuid}
+    # uef:{field}::{uuid}
     if len(parts) < 3:
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
         return
     _prefix, field = parts[0], parts[1]
-    value = None
+    value = parts[2] if len(parts) > 3 else None
     user_uuid = parts[-1]
-    if len(parts) == 4:
-        value = parts[2]
     back_to = _get_user_detail_back_target(callback.from_user.id)
 
     if field == "status" and value:
