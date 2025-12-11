@@ -417,11 +417,15 @@ def build_billing_nodes(data: dict, t: Callable[[str], str]) -> str:
     stats = resp.get("stats", {}) or {}
     if not nodes:
         return f"*{t('billing_nodes.title').split(':')[0]}*\n\n{t('billing_nodes.empty')}"
+    upcoming_val = stats.get("upcomingNodesCount", NA)
+    month_val = stats.get("currentMonthPayments", NA)
+    total_val = stats.get("totalSpent", NA)
+    
     lines = [
         f"*{t('billing_nodes.title').format(total=resp.get('totalBillingNodes', len(nodes)))}*",
         "",
         f"*{t('billing_nodes.stats_section')}*",
-        f"  {t('billing_nodes.stats').format(upcoming=f'*{stats.get(\"upcomingNodesCount\", NA)}*', month=f'`{stats.get(\"currentMonthPayments\", NA)}`', total=f'*{stats.get(\"totalSpent\", NA)}*')}",
+        f"  {t('billing_nodes.stats_text').format(upcoming=f'*{upcoming_val}*', month=f'`{month_val}`', total=f'*{total_val}*')}",
         "",
         f"*{t('billing_nodes.nodes_section')}*",
     ]
