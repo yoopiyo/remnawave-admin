@@ -42,6 +42,7 @@ from src.keyboards.system_nodes import system_nodes_keyboard
 from src.keyboards.stats_menu import stats_menu_keyboard
 from src.keyboards.subscription_actions import subscription_keyboard
 from src.keyboards.user_actions import user_actions_keyboard, user_edit_keyboard, user_edit_strategy_keyboard, user_edit_squad_keyboard
+from src.keyboards.node_edit import node_edit_keyboard
 from src.keyboards.billing_menu import billing_menu_keyboard
 from src.keyboards.billing_nodes_menu import billing_nodes_menu_keyboard
 from src.keyboards.providers_menu import providers_menu_keyboard
@@ -167,6 +168,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_node_create_input(message, ctx)
     elif action == "host_create":
         await _handle_host_create_input(message, ctx)
+    elif action == "node_edit":
+        await _handle_node_edit_input(message, ctx)
     else:
         await _send_clean_message(message, _("errors.generic"))
 
@@ -663,9 +666,8 @@ async def cb_nodes(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    text = await _fetch_nodes_text()
-    from src.keyboards.nodes_menu import nodes_list_keyboard
-    await callback.message.edit_text(text, reply_markup=nodes_list_keyboard())
+    text, keyboard = await _fetch_nodes_with_keyboard()
+    await callback.message.edit_text(text, reply_markup=keyboard)
 
 
 @router.callback_query(F.data.startswith("nodes:") | F.data.startswith("node_create:"))
@@ -683,9 +685,7 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
     if action == "list":
         # Обновляем список нод
         try:
-            text = await _fetch_nodes_text()
-            from src.keyboards.nodes_menu import nodes_list_keyboard
-            keyboard = nodes_list_keyboard()
+            text, keyboard = await _fetch_nodes_with_keyboard()
             try:
                 await callback.message.edit_text(text, reply_markup=keyboard)
             except TelegramBadRequest as e:
@@ -1262,6 +1262,23 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
                 PENDING_INPUT.pop(user_id, None)
                 logger.exception("❌ Host creation failed")
                 await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
+    elif len(parts) >= 4 and parts[0] == "nef" and parts[1] == "skip":
+        # nef:skip:{node_uuid}:{field}
+        node_uuid = parts[2]
+        field = parts[3]
+        back_to = NavTarget.NODES_LIST
+        
+        # Пропускаем поле - оставляем текущее значение (не обновляем)
+        try:
+            node = await api_client.get_node(node_uuid)
+            summary = build_node_summary(node, _)
+            await callback.message.edit_text(
+                summary,
+                reply_markup=node_edit_keyboard(node_uuid, back_to=back_to),
+                parse_mode="HTML"
+            )
+        except Exception:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
 
 
 @router.callback_query(F.data.startswith("providers:"))
@@ -1768,6 +1785,191 @@ async def cb_user_edit_field(callback: CallbackQuery) -> None:
         "back_to": back_to,
     }
     await callback.message.edit_text(prompt, reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
+
+
+@router.callback_query(F.data.startswith("node_edit:"))
+async def cb_node_edit_menu(callback: CallbackQuery) -> None:
+    """Обработчик входа в меню редактирования ноды."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    _prefix, node_uuid = callback.data.split(":")
+    try:
+        node = await api_client.get_node(node_uuid)
+        summary = build_node_summary(node, _)
+        await callback.message.edit_text(
+            summary,
+            reply_markup=node_edit_keyboard(node_uuid, back_to=NavTarget.NODES_LIST),
+            parse_mode="HTML"
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=main_menu_keyboard())
+    except ApiClientError:
+        logger.exception("❌ Node edit menu failed node_uuid=%s actor_id=%s", node_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
+
+
+@router.callback_query(F.data.startswith("nef:"))
+async def cb_node_edit_field(callback: CallbackQuery) -> None:
+    """Обработчик редактирования полей ноды."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    # patterns: nef:{field}::{node_uuid} или nef:{field}:{value}:{node_uuid}
+    if len(parts) < 3:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
+        return
+    _prefix, field = parts[0], parts[1]
+    value = parts[2] if len(parts) > 3 and parts[2] else None
+    node_uuid = parts[-1]
+    back_to = NavTarget.NODES_LIST
+
+    # Загружаем текущие данные ноды
+    try:
+        node = await api_client.get_node(node_uuid)
+        info = node.get("response", node)
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())
+        return
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=main_menu_keyboard())
+        return
+    except ApiClientError:
+        logger.exception("❌ Node edit fetch failed node_uuid=%s actor_id=%s", node_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
+        return
+
+    # Специальные обработки для полей, требующих выбор из списка
+    if field == "provider" and not value:
+        # Показываем список провайдеров для выбора
+        try:
+            providers_data = await api_client.get_infra_providers()
+            providers = providers_data.get("response", {}).get("providers", [])
+            if not providers:
+                await callback.message.edit_text(
+                    _("node.no_providers"),
+                    reply_markup=node_edit_keyboard(node_uuid, back_to=back_to)
+                )
+                return
+            keyboard = _node_providers_keyboard(providers)
+            # Заменяем callback_data для редактирования
+            for row in keyboard.inline_keyboard:
+                for button in row:
+                    if button.callback_data:
+                        if button.callback_data.startswith("nodes:select_provider:"):
+                            provider_uuid = button.callback_data.split(":")[-1]
+                            button.callback_data = f"nef:provider:{provider_uuid}:{node_uuid}"
+                        elif button.callback_data == "nodes:select_provider:none":
+                            button.callback_data = f"nef:provider:none:{node_uuid}"
+            await callback.message.edit_text(
+                _("node.prompt_provider"),
+                reply_markup=keyboard
+            )
+            return
+        except Exception:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
+            return
+
+    if field == "config_profile" and not value:
+        # Показываем список профилей конфигурации для выбора
+        try:
+            profiles_data = await api_client.get_config_profiles()
+            profiles = profiles_data.get("response", {}).get("configProfiles", [])
+            if not profiles:
+                await callback.message.edit_text(
+                    _("node.no_config_profiles"),
+                    reply_markup=node_edit_keyboard(node_uuid, back_to=back_to)
+                )
+                return
+            keyboard = _node_config_profiles_keyboard(profiles)
+            # Заменяем callback_data для редактирования
+            for row in keyboard.inline_keyboard:
+                for button in row:
+                    if button.callback_data and button.callback_data.startswith("nodes:select_profile:"):
+                        profile_uuid = button.callback_data.split(":")[-1]
+                        button.callback_data = f"nef:config_profile:{profile_uuid}:{node_uuid}"
+            await callback.message.edit_text(
+                _("node.prompt_config_profile"),
+                reply_markup=keyboard
+            )
+            return
+        except Exception:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
+            return
+
+    # Если значение уже передано (например, выбор провайдера или профиля)
+    if value and field in ("provider", "config_profile"):
+        payload = {}
+        if field == "provider":
+            if value == "none":
+                payload["providerUuid"] = None
+            else:
+                payload["providerUuid"] = value
+        elif field == "config_profile":
+            # Для профиля конфигурации нужно также получить инбаунды
+            # Пока упростим - просто обновим профиль, инбаунды оставим как есть
+            try:
+                profile_data = await api_client.get_config_profile_computed(value)
+                profile_info = profile_data.get("response", profile_data)
+                inbounds = profile_info.get("inbounds", [])
+                inbound_uuids = [i.get("uuid") for i in inbounds if i.get("uuid")]
+                if inbound_uuids:
+                    payload["config_profile_uuid"] = value
+                    payload["active_inbounds"] = inbound_uuids
+            except Exception:
+                await callback.message.edit_text(_("errors.generic"), reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
+                return
+        
+        if payload:
+            await _apply_node_update(callback, node_uuid, payload, back_to)
+        return
+
+    # Для остальных полей показываем промпт для ввода
+    current_values = {
+        "name": info.get("name", ""),
+        "address": info.get("address", ""),
+        "port": str(info.get("port", "")) if info.get("port") else "",
+        "country_code": info.get("countryCode", ""),
+        "traffic_limit": format_bytes(info.get("trafficLimitBytes")) if info.get("trafficLimitBytes") else "",
+        "notify_percent": str(info.get("notifyPercent", "")) if info.get("notifyPercent") else "",
+        "traffic_reset_day": str(info.get("trafficResetDay", "")) if info.get("trafficResetDay") else "",
+        "consumption_multiplier": str(info.get("consumptionMultiplier", "")) if info.get("consumptionMultiplier") else "",
+        "tags": ", ".join(info.get("tags", [])) if info.get("tags") else "",
+    }
+
+    prompt_map = {
+        "name": _("node.edit_prompt_name"),
+        "address": _("node.edit_prompt_address"),
+        "port": _("node.edit_prompt_port"),
+        "country_code": _("node.edit_prompt_country_code"),
+        "traffic_limit": _("node.edit_prompt_traffic_limit"),
+        "notify_percent": _("node.edit_prompt_notify_percent"),
+        "traffic_reset_day": _("node.edit_prompt_traffic_reset_day"),
+        "consumption_multiplier": _("node.edit_prompt_consumption_multiplier"),
+        "tags": _("node.edit_prompt_tags"),
+    }
+    prompt = prompt_map.get(field, _("errors.generic"))
+    if prompt == _("errors.generic"):
+        await callback.message.edit_text(prompt, reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
+        return
+
+    current_line = _("user.current").format(value=current_values.get(field, _("user.not_set")))
+    prompt = f"{prompt}\n{current_line}"
+
+    PENDING_INPUT[callback.from_user.id] = {
+        "action": "node_edit",
+        "field": field,
+        "uuid": node_uuid,
+        "back_to": back_to,
+    }
+    await callback.message.edit_text(
+        prompt,
+        reply_markup=input_keyboard("node_edit", allow_skip=True, skip_callback=f"nef:skip:{node_uuid}:{field}")
+    )
+
 
 @router.callback_query(F.data.startswith("node:"))
 async def cb_node_actions(callback: CallbackQuery) -> None:
@@ -3566,6 +3768,178 @@ async def _handle_user_edit_input(message: Message, ctx: dict) -> None:
     await _apply_user_update(message, user_uuid, payload, back_to=back_to)
 
 
+async def _apply_node_update(target: Message | CallbackQuery, node_uuid: str, payload: dict, back_to: str) -> None:
+    """Применяет обновление ноды."""
+    try:
+        # Преобразуем payload для API
+        api_payload = {}
+        if "name" in payload:
+            api_payload["name"] = payload["name"]
+        if "address" in payload:
+            api_payload["address"] = payload["address"]
+        if "port" in payload:
+            api_payload["port"] = payload["port"]
+        if "country_code" in payload:
+            api_payload["countryCode"] = payload["country_code"]
+        if "providerUuid" in payload:
+            api_payload["provider_uuid"] = payload["providerUuid"]
+        if "config_profile_uuid" in payload and "active_inbounds" in payload:
+            api_payload["config_profile_uuid"] = payload["config_profile_uuid"]
+            api_payload["active_inbounds"] = payload["active_inbounds"]
+        if "traffic_limit_bytes" in payload:
+            api_payload["traffic_limit_bytes"] = payload["traffic_limit_bytes"]
+        if "notify_percent" in payload:
+            api_payload["notifyPercent"] = payload["notify_percent"]
+        if "traffic_reset_day" in payload:
+            api_payload["trafficResetDay"] = payload["traffic_reset_day"]
+        if "consumption_multiplier" in payload:
+            api_payload["consumptionMultiplier"] = payload["consumption_multiplier"]
+        if "tags" in payload:
+            api_payload["tags"] = payload["tags"]
+        
+        await api_client.update_node(node_uuid, **api_payload)
+        node = await api_client.get_node(node_uuid)
+        summary = build_node_summary(node, _)
+        markup = node_edit_keyboard(node_uuid, back_to=back_to)
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(summary, reply_markup=markup, parse_mode="HTML")
+        else:
+            await _send_clean_message(target, summary, reply_markup=markup, parse_mode="HTML")
+    except UnauthorizedError:
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("errors.unauthorized"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("errors.unauthorized"), reply_markup=reply_markup)
+    except NotFoundError:
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("node.not_found"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("node.not_found"), reply_markup=reply_markup)
+    except ApiClientError:
+        logger.exception("❌ Node update failed node_uuid=%s payload_keys=%s", node_uuid, list(payload.keys()))
+        reply_markup = main_menu_keyboard()
+        if isinstance(target, CallbackQuery):
+            await target.message.edit_text(_("errors.generic"), reply_markup=reply_markup)
+        else:
+            await _send_clean_message(target, _("errors.generic"), reply_markup=reply_markup)
+
+
+async def _handle_node_edit_input(message: Message, ctx: dict) -> None:
+    """Обработчик ввода значений при редактировании ноды."""
+    node_uuid = ctx.get("uuid")
+    field = ctx.get("field")
+    back_to = ctx.get("back_to", NavTarget.NODES_LIST)
+    text = (message.text or "").strip()
+
+    if not node_uuid or not field:
+        await _send_clean_message(message, _("errors.generic"), reply_markup=nav_keyboard(back_to))
+        return
+
+    def _set_retry(prompt_key: str) -> None:
+        PENDING_INPUT[message.from_user.id] = ctx
+        asyncio.create_task(
+            _send_clean_message(
+                message,
+                _(prompt_key),
+                reply_markup=node_edit_keyboard(node_uuid, back_to=back_to),
+            )
+        )
+
+    payload: dict[str, object | None] = {}
+
+    if field == "name":
+        if not text or len(text) < 3 or len(text) > 30:
+            _set_retry("node.invalid_name")
+            return
+        payload["name"] = text
+    elif field == "address":
+        if not text:
+            _set_retry("node.invalid_address")
+            return
+        payload["address"] = text
+    elif field == "port":
+        if text in {"", "-"}:
+            payload["port"] = None
+        else:
+            try:
+                port = int(text)
+                if port < 1 or port > 65535:
+                    raise ValueError
+                payload["port"] = port
+            except ValueError:
+                _set_retry("node.invalid_port")
+                return
+    elif field == "country_code":
+        if text in {"", "-"}:
+            payload["country_code"] = None
+        else:
+            if len(text) != 2:
+                _set_retry("node.invalid_country_code")
+                return
+            payload["country_code"] = text.upper()
+    elif field == "traffic_limit":
+        if text in {"", "-"}:
+            payload["traffic_limit_bytes"] = None
+        else:
+            try:
+                gb = float(text)
+                if gb < 0:
+                    raise ValueError
+                payload["traffic_limit_bytes"] = int(gb * 1024 * 1024 * 1024)
+            except ValueError:
+                _set_retry("node.invalid_number")
+                return
+    elif field == "notify_percent":
+        if text in {"", "-"}:
+            payload["notify_percent"] = None
+        else:
+            try:
+                percent = int(text)
+                if percent < 0 or percent > 100:
+                    raise ValueError
+                payload["notify_percent"] = percent
+            except ValueError:
+                _set_retry("node.invalid_number")
+                return
+    elif field == "traffic_reset_day":
+        if text in {"", "-"}:
+            payload["traffic_reset_day"] = None
+        else:
+            try:
+                day = int(text)
+                if day < 1 or day > 31:
+                    raise ValueError
+                payload["traffic_reset_day"] = day
+            except ValueError:
+                _set_retry("node.invalid_number")
+                return
+    elif field == "consumption_multiplier":
+        if text in {"", "-"}:
+            payload["consumption_multiplier"] = None
+        else:
+            try:
+                multiplier = float(text)
+                if multiplier < 0:
+                    raise ValueError
+                payload["consumption_multiplier"] = multiplier
+            except ValueError:
+                _set_retry("node.invalid_multiplier")
+                return
+    elif field == "tags":
+        if text in {"", "-"}:
+            payload["tags"] = []
+        else:
+            tags = [tag.strip() for tag in text.split(",") if tag.strip()]
+            payload["tags"] = tags
+    else:
+        await _send_clean_message(message, _("errors.generic"), reply_markup=node_edit_keyboard(node_uuid, back_to=back_to))
+        return
+
+    await _apply_node_update(message, node_uuid, payload, back_to=back_to)
+
+
 def _format_user_edit_snapshot(info: dict, t: Callable[[str], str]) -> str:
     traffic_limit = info.get("trafficLimitBytes")
     strategy = info.get("trafficLimitStrategy")
@@ -4837,6 +5211,62 @@ async def _fetch_nodes_text() -> str:
     except ApiClientError:
         logger.exception("⚠️ Nodes fetch failed")
         return _("errors.generic")
+
+
+async def _fetch_nodes_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
+    """Получает текст списка нод и клавиатуру с кнопками для каждой ноды."""
+    from src.keyboards.nodes_menu import nodes_list_keyboard
+    
+    try:
+        data = await api_client.get_nodes()
+        nodes = data.get("response", [])
+        if not nodes:
+            return _("node.list_empty"), nodes_list_keyboard()
+        
+        sorted_nodes = sorted(nodes, key=lambda n: n.get("viewPosition", 0))
+        lines = [_("node.list_title").format(total=len(nodes))]
+        rows: list[list[InlineKeyboardButton]] = []
+        
+        for node in sorted_nodes[:10]:
+            status = "DISABLED" if node.get("isDisabled") else ("ONLINE" if node.get("isConnected") else "OFFLINE")
+            status_emoji = "🟢" if status == "ONLINE" else ("🟡" if status == "DISABLED" else "🔴")
+            address = f"{node.get('address', 'n/a')}:{node.get('port') or '—'}"
+            users_online = node.get("usersOnline", "—")
+            name = node.get("name", "n/a")
+            node_uuid = node.get("uuid", "")
+            
+            line = _(
+                "node.list_item"
+            ).format(
+                statusEmoji=status_emoji,
+                name=name,
+                address=address,
+                users=users_online,
+                traffic=format_bytes(node.get("trafficUsedBytes")),
+            )
+            lines.append(line)
+            
+            # Добавляем кнопку для редактирования ноды
+            rows.append([InlineKeyboardButton(
+                text=f"✏️ {name}",
+                callback_data=f"node_edit:{node_uuid}"
+            )])
+        
+        if len(nodes) > 10:
+            lines.append(_("node.list_more").format(count=len(nodes) - 10))
+        
+        # Добавляем кнопки меню
+        menu_keyboard = nodes_list_keyboard()
+        # Добавляем кнопки меню к кнопкам нод
+        rows.extend(menu_keyboard.inline_keyboard)
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        return "\n".join(lines), keyboard
+    except UnauthorizedError:
+        return _("errors.unauthorized"), nodes_list_keyboard()
+    except ApiClientError:
+        logger.exception("⚠️ Nodes fetch failed")
+        return _("errors.generic"), nodes_list_keyboard()
 
 
 async def _fetch_nodes_realtime_text() -> str:
