@@ -680,7 +680,20 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
     else:
         action = parts[1] if len(parts) > 1 else None
     
-    if action == "create":
+    if action == "list":
+        # Обновляем список нод
+        try:
+            text = await _fetch_nodes_text()
+            from src.keyboards.nodes_menu import nodes_list_keyboard
+            await callback.message.edit_text(text, reply_markup=nodes_list_keyboard())
+        except UnauthorizedError:
+            from src.keyboards.nodes_menu import nodes_list_keyboard
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_list_keyboard())
+        except ApiClientError:
+            logger.exception("❌ Nodes fetch failed")
+            from src.keyboards.nodes_menu import nodes_list_keyboard
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_list_keyboard())
+    elif action == "create":
         # Начинаем создание ноды
         PENDING_INPUT[callback.from_user.id] = {
             "action": "node_create",

@@ -8,6 +8,7 @@ def nodes_list_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для меню списка нод с полным функционалом."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text=_("node.list"), callback_data="nodes:list")],
             [InlineKeyboardButton(text=_("node.create"), callback_data="nodes:create")],
             [InlineKeyboardButton(text=_("node.update"), callback_data="nodes:update")],
             [InlineKeyboardButton(text=_("node.delete"), callback_data="nodes:delete")],

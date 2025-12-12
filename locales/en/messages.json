@@ -160,6 +160,7 @@
     "disable": "Disable",
     "restart": "Restart",
     "reset_traffic": "Reset traffic",
+    "list": "📋 List nodes",
     "create": "➕ Create node",
     "update": "✏️ Update node",
     "delete": "🗑 Delete node",
