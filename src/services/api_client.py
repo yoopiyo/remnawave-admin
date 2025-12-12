@@ -40,7 +40,6 @@ class RemnawaveApiClient:
         except HTTPStatusError as exc:
             status = exc.response.status_code
             if status in (401, 403):
-                logger.warning("Unauthorized error %s on GET %s: %s", status, url, exc.response.text[:200])
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -58,7 +57,6 @@ class RemnawaveApiClient:
         except HTTPStatusError as exc:
             status = exc.response.status_code
             if status in (401, 403):
-                logger.warning("Unauthorized error %s on POST %s: %s", status, url, exc.response.text[:200])
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -72,21 +70,10 @@ class RemnawaveApiClient:
         try:
             response = await self._client.patch(url, json=json)
             response.raise_for_status()
-            logger.debug("Successful PATCH %s (status: %s)", url, response.status_code)
-            # Обрабатываем случай, когда ответ может быть пустым (например, 204 No Content)
-            if not response.content:
-                logger.debug("Empty response body on PATCH %s", url)
-                return {}
-            try:
-                return response.json()
-            except ValueError:
-                # Если ответ не является валидным JSON, возвращаем пустой dict
-                logger.warning("Empty or invalid JSON response on PATCH %s", url)
-                return {}
+            return response.json()
         except HTTPStatusError as exc:
             status = exc.response.status_code
             if status in (401, 403):
-                logger.warning("Unauthorized error %s on PATCH %s: %s", status, url, exc.response.text[:200])
                 raise UnauthorizedError from exc
             if status == 404:
                 raise NotFoundError from exc
@@ -272,8 +259,7 @@ class RemnawaveApiClient:
             payload["name"] = name
         if template_json is not None:
             payload["templateJson"] = template_json
-        # Используем общий метод _patch для единообразной обработки ошибок
-        return await self._patch("/api/subscription-templates", json=payload)
+        return await self._client.patch("/api/subscription-templates", json=payload).json()
 
     async def reorder_templates(self, uuids_in_order: list[str]) -> dict:
         items = [{"uuid": uuid, "viewPosition": idx + 1} for idx, uuid in enumerate(uuids_in_order)]
