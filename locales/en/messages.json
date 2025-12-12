@@ -170,7 +170,7 @@
     "range_title": "📅 Usage by range:",
     "range_item": "{date} — {name} ({country}) | total {total} (↓ {down} / ↑ {up})",
     "range_empty": "No data for this range.",
-    "prompt_name": "🛰 *Create Node*\n\nEnter node name (3-30 characters):",
+    "prompt_name": "🛰 Create Node\n\nEnter node name (3-30 characters):",
     "prompt_address": "🛰 *Create Node*\n\nName: {name}\n\nEnter node address:",
     "prompt_config_profile": "🛰 *Create Node*\n\nName: {name}\nAddress: {address}\n\nSelect config profile:",
     "prompt_inbounds": "🛰 *Create Node*\n\nName: {name}\nAddress: {address}\nProfile: {profile_name}\n\nSelect inbounds (multiple selection possible):",

@@ -12,8 +12,9 @@ def escape_markdown(text: str) -> str:
     """Экранирует специальные символы Markdown для Telegram."""
     if not text:
         return ""
-    # Экранируем специальные символы Markdown
-    special_chars = ['*', '_', '`', '[', ']', '(', ')', '~', '>', '#', '+', '-', '=', '|', '{', '}', '.', '!']
+    # Экранируем только основные специальные символы Markdown для Telegram
+    # Не экранируем символы, которые используются в шаблонах или не вызывают проблем
+    special_chars = ['*', '_', '`', '[', ']', '(', ')', '~']
     result = str(text)
     for char in special_chars:
         result = result.replace(char, f'\\{char}')

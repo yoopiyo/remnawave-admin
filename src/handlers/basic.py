@@ -686,8 +686,7 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         }
         await callback.message.edit_text(
             _("node.prompt_name"),
-            reply_markup=input_keyboard("node_create"),
-            parse_mode="Markdown"
+            reply_markup=input_keyboard("node_create")
         )
     elif action == "select_profile":
         # Выбор профиля конфигурации
@@ -726,12 +725,11 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
             keyboard = _node_inbounds_keyboard(inbounds, [])
             await callback.message.edit_text(
                 _("node.prompt_inbounds").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    profile_name=escape_markdown(data["profile_name"])
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    profile_name=data["profile_name"]
                 ),
-                reply_markup=keyboard,
-                parse_mode="Markdown"
+                reply_markup=keyboard
             )
         except Exception:
             await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard(), parse_mode="Markdown")
@@ -760,12 +758,11 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         keyboard = _node_inbounds_keyboard(available, selected)
         await callback.message.edit_text(
             _("node.prompt_inbounds").format(
-                name=escape_markdown(data.get("name", "")),
-                address=escape_markdown(data.get("address", "")),
-                profile_name=escape_markdown(data.get("profile_name", ""))
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                profile_name=data.get("profile_name", "")
             ),
-            reply_markup=keyboard,
-            parse_mode="Markdown"
+            reply_markup=keyboard
         )
     elif action == "confirm_inbounds":
         # Подтверждение выбора инбаундов
@@ -785,13 +782,12 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         
         await callback.message.edit_text(
             _("node.prompt_port").format(
-                name=escape_markdown(data.get("name", "")),
-                address=escape_markdown(data.get("address", "")),
-                profile_name=escape_markdown(data.get("profile_name", "")),
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                profile_name=data.get("profile_name", ""),
                 inbounds_count=len(selected)
             ),
-            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:port"),
-            parse_mode="Markdown"
+            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:port")
         )
     elif action == "select_provider":
         # Выбор провайдера
@@ -810,16 +806,15 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         provider_name = "—" if not provider_uuid else "—"  # Можно получить имя провайдера
         await callback.message.edit_text(
             _("node.prompt_traffic_tracking").format(
-                name=escape_markdown(data.get("name", "")),
-                address=escape_markdown(data.get("address", "")),
-                port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                country=escape_markdown(data.get("country_code", "—") or "—"),
-                provider=escape_markdown(provider_name),
-                profile_name=escape_markdown(data.get("profile_name", "")),
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                port=str(data.get("port", "—")) if data.get("port") else "—",
+                country=data.get("country_code", "—") or "—",
+                provider=provider_name,
+                profile_name=data.get("profile_name", ""),
                 inbounds_count=len(data.get("selected_inbounds", []))
             ),
-            reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
-            parse_mode="Markdown"
+            reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking")
         )
     elif action == "toggle_traffic_tracking":
         # Переключение отслеживания трафика
@@ -838,17 +833,16 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         tracking_display = _("node.yes") if data["is_traffic_tracking_active"] else _("node.no")
         await callback.message.edit_text(
             _("node.prompt_traffic_limit").format(
-                name=escape_markdown(data.get("name", "")),
-                address=escape_markdown(data.get("address", "")),
-                port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                country=escape_markdown(data.get("country_code", "—") or "—"),
-                provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                profile_name=escape_markdown(data.get("profile_name", "")),
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                port=str(data.get("port", "—")) if data.get("port") else "—",
+                country=data.get("country_code", "—") or "—",
+                provider=data.get("provider_name", "—") or "—",
+                profile_name=data.get("profile_name", ""),
                 inbounds_count=len(data.get("selected_inbounds", [])),
                 tracking=tracking_display
             ),
-            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:traffic_limit"),
-            parse_mode="Markdown"
+            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:traffic_limit")
         )
 
 
@@ -1066,14 +1060,13 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             PENDING_INPUT[user_id] = ctx
             await callback.message.edit_text(
                 _("node.prompt_country").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
                     port="—",
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", []))
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country")
             )
         elif stage == "country":
             data["country_code"] = None
@@ -1086,15 +1079,14 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
                 keyboard = _node_providers_keyboard(providers) if providers else input_keyboard(action, allow_skip=True, skip_callback="nodes:select_provider:none")
                 await callback.message.edit_text(
                     _("node.prompt_provider").format(
-                        name=escape_markdown(data.get("name", "")),
-                        address=escape_markdown(data.get("address", "")),
-                        port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=str(data.get("port", "—")) if data.get("port") else "—",
                         country="—",
-                        profile_name=escape_markdown(data.get("profile_name", "")),
+                        profile_name=data.get("profile_name", ""),
                         inbounds_count=len(data.get("selected_inbounds", []))
                     ),
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    reply_markup=keyboard
                 )
             except Exception:
                 data["provider_uuid"] = None
@@ -1102,16 +1094,15 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
                 PENDING_INPUT[user_id] = ctx
                 await callback.message.edit_text(
                     _("node.prompt_traffic_tracking").format(
-                        name=escape_markdown(data.get("name", "")),
-                        address=escape_markdown(data.get("address", "")),
-                        port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=str(data.get("port", "—")) if data.get("port") else "—",
                         country="—",
                         provider="—",
-                        profile_name=escape_markdown(data.get("profile_name", "")),
+                        profile_name=data.get("profile_name", ""),
                         inbounds_count=len(data.get("selected_inbounds", []))
                     ),
-                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
-                    parse_mode="Markdown"
+                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking")
                 )
         elif stage == "traffic_limit":
             data["traffic_limit_bytes"] = None
@@ -1119,18 +1110,17 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             PENDING_INPUT[user_id] = ctx
             await callback.message.edit_text(
                 _("node.prompt_notify_percent").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
                     traffic_limit="—"
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent")
             )
         elif stage == "notify_percent":
             data["notify_percent"] = None
@@ -1138,19 +1128,18 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             PENDING_INPUT[user_id] = ctx
             await callback.message.edit_text(
                 _("node.prompt_traffic_reset_day").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
                     notify_percent="—"
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day")
             )
         elif stage == "traffic_reset_day":
             data["traffic_reset_day"] = None
@@ -1158,20 +1147,19 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             PENDING_INPUT[user_id] = ctx
             await callback.message.edit_text(
                 _("node.prompt_consumption_multiplier").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
-                    notify_percent=escape_markdown(str(data["notify_percent"]) if data.get("notify_percent") is not None else "—"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
                     reset_day="—"
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier")
             )
         elif stage == "consumption_multiplier":
             data["consumption_multiplier"] = None
@@ -1179,21 +1167,20 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             PENDING_INPUT[user_id] = ctx
             await callback.message.edit_text(
                 _("node.prompt_tags").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
-                    notify_percent=escape_markdown(str(data["notify_percent"]) if data.get("notify_percent") is not None else "—"),
-                    reset_day=escape_markdown(str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—",
                     multiplier="—"
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags")
             )
         elif stage == "tags":
             data["tags"] = None
@@ -2731,7 +2718,7 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
     try:
         if stage == "name":
             if not text or len(text) < 3 or len(text) > 30:
-                await _send_clean_message(message, _("node.prompt_name"), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                await _send_clean_message(message, _("node.prompt_name"), reply_markup=input_keyboard(action))
                 PENDING_INPUT[user_id] = ctx
                 return
             data["name"] = text
@@ -2739,9 +2726,8 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             PENDING_INPUT[user_id] = ctx
             await _send_clean_message(
                 message,
-                _("node.prompt_address").format(name=escape_markdown(data["name"])),
-                reply_markup=input_keyboard(action),
-                parse_mode="Markdown"
+                _("node.prompt_address").format(name=data["name"]),
+                reply_markup=input_keyboard(action)
             )
             return
         
@@ -2749,9 +2735,8 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             if not text or len(text) < 2:
                 await _send_clean_message(
                     message,
-                    _("node.prompt_address").format(name=escape_markdown(data.get("name", ""))),
-                    reply_markup=input_keyboard(action),
-                    parse_mode="Markdown"
+                    _("node.prompt_address").format(name=data.get("name", "")),
+                    reply_markup=input_keyboard(action)
                 )
                 PENDING_INPUT[user_id] = ctx
                 return
@@ -2770,9 +2755,8 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
                 keyboard = _node_config_profiles_keyboard(profiles)
                 await _send_clean_message(
                     message,
-                    _("node.prompt_config_profile").format(name=escape_markdown(data["name"]), address=escape_markdown(data["address"])),
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    _("node.prompt_config_profile").format(name=data["name"], address=data["address"]),
+                    reply_markup=keyboard
                 )
             except Exception:
                 await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard(), parse_mode="Markdown")
@@ -2803,14 +2787,13 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             await _send_clean_message(
                 message,
                 _("node.prompt_country").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(port_display),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=port_display,
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", []))
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country")
             )
             return
         
@@ -2840,15 +2823,14 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
                 await _send_clean_message(
                     message,
                     _("node.prompt_provider").format(
-                        name=escape_markdown(data.get("name", "")),
-                        address=escape_markdown(data.get("address", "")),
-                        port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                        country=escape_markdown(country_display),
-                        profile_name=escape_markdown(data.get("profile_name", "")),
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=str(data.get("port", "—")) if data.get("port") else "—",
+                        country=country_display,
+                        profile_name=data.get("profile_name", ""),
                         inbounds_count=len(data.get("selected_inbounds", []))
                     ),
-                    reply_markup=keyboard,
-                    parse_mode="Markdown"
+                    reply_markup=keyboard
                 )
             except Exception:
                 # Если провайдеры недоступны, пропускаем
@@ -2859,16 +2841,15 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
                 await _send_clean_message(
                     message,
                     _("node.prompt_traffic_tracking").format(
-                        name=escape_markdown(data.get("name", "")),
-                        address=escape_markdown(data.get("address", "")),
-                        port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                        country=escape_markdown(country_display),
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=str(data.get("port", "—")) if data.get("port") else "—",
+                        country=country_display,
                         provider="—",
-                        profile_name=escape_markdown(data.get("profile_name", "")),
+                        profile_name=data.get("profile_name", ""),
                         inbounds_count=len(data.get("selected_inbounds", []))
                     ),
-                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
-                    parse_mode="Markdown"
+                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking")
                 )
             return
         
@@ -2896,18 +2877,17 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             await _send_clean_message(
                 message,
                 _("node.prompt_notify_percent").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(limit_display)
+                    traffic_limit=limit_display
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent")
             )
             return
         
@@ -2935,19 +2915,18 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             await _send_clean_message(
                 message,
                 _("node.prompt_traffic_reset_day").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
-                    notify_percent=escape_markdown(percent_display)
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=percent_display
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day")
             )
             return
         
@@ -2975,20 +2954,19 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             await _send_clean_message(
                 message,
                 _("node.prompt_consumption_multiplier").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
-                    notify_percent=escape_markdown(str(data["notify_percent"]) if data.get("notify_percent") is not None else "—"),
-                    reset_day=escape_markdown(day_display)
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=day_display
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier")
             )
             return
         
@@ -3016,21 +2994,20 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
             await _send_clean_message(
                 message,
                 _("node.prompt_tags").format(
-                    name=escape_markdown(data.get("name", "")),
-                    address=escape_markdown(data.get("address", "")),
-                    port=escape_markdown(str(data.get("port", "—")) if data.get("port") else "—"),
-                    country=escape_markdown(data.get("country_code", "—") or "—"),
-                    provider=escape_markdown(data.get("provider_name", "—") or "—"),
-                    profile_name=escape_markdown(data.get("profile_name", "")),
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=str(data.get("port", "—")) if data.get("port") else "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
                     inbounds_count=len(data.get("selected_inbounds", [])),
                     tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
-                    traffic_limit=escape_markdown(format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"),
-                    notify_percent=escape_markdown(str(data["notify_percent"]) if data.get("notify_percent") is not None else "—"),
-                    reset_day=escape_markdown(str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—"),
-                    multiplier=escape_markdown(multiplier_display)
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—",
+                    multiplier=multiplier_display
                 ),
-                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
-                parse_mode="Markdown"
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags")
             )
             return
         
