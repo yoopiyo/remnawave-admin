@@ -768,8 +768,8 @@ async def cb_providers_actions(callback: CallbackQuery) -> None:
     await callback.answer()
     action = callback.data.split(":")[-1]
     if action == "create":
-        PENDING_INPUT[callback.from_user.id] = {"action": "provider_create"}
-        await callback.message.edit_text(_("provider.prompt_create"), reply_markup=providers_menu_keyboard())
+        PENDING_INPUT[callback.from_user.id] = {"action": "provider_create", "stage": "name", "data": {}}
+        await callback.message.edit_text(_("provider.prompt_name"), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
     elif action == "update":
         PENDING_INPUT[callback.from_user.id] = {"action": "provider_update"}
         await callback.message.edit_text(_("provider.prompt_update"), reply_markup=providers_menu_keyboard())
@@ -852,12 +852,20 @@ async def cb_billing_actions(callback: CallbackQuery) -> None:
         provider_uuid = parts[3]
         
         if provider_action == "billing_history_create":
-            # Для создания записи биллинга запрашиваем сумму и дату
+            # Для создания записи биллинга запрашиваем сумму, затем дату
+            try:
+                provider_data = await api_client.get_infra_provider(provider_uuid)
+                provider_name = provider_data.get("response", {}).get("name", "—")
+            except Exception:
+                provider_name = "—"
             PENDING_INPUT[callback.from_user.id] = {
-                "action": "billing_history_create_amount",
+                "action": "billing_history_create",
+                "stage": "amount",
                 "provider_uuid": provider_uuid,
+                "provider_name": provider_name,
+                "data": {},
             }
-            await _edit_text_safe(callback.message, _("billing.prompt_amount_date"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+            await _edit_text_safe(callback.message, _("billing.prompt_amount"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
         elif provider_action == "billing_nodes_create":
             # Для создания биллинга ноды нужно показать все ноды системы
             # (можно создать биллинг для любой ноды с указанным провайдером)
@@ -1904,17 +1912,49 @@ async def _handle_template_reorder_input(message: Message, ctx: dict) -> None:
 
 async def _handle_provider_input(message: Message, ctx: dict) -> None:
     action = ctx.get("action")
-    parts = message.text.split()
+    user_id = message.from_user.id
+    text = message.text.strip()
+    data = ctx.setdefault("data", {})
+    stage = ctx.get("stage", None)
+    
     try:
         if action == "provider_create":
-            if not parts:
-                raise ValueError
-            name = parts[0]
-            favicon = parts[1] if len(parts) > 1 else None
-            login = parts[2] if len(parts) > 2 else None
-            await api_client.create_infra_provider(name=name, favicon_link=favicon, login_url=login)
-            await _send_clean_message(message, _("provider.created"), reply_markup=providers_menu_keyboard())
+            # Пошаговый ввод для создания провайдера
+            if stage == "name":
+                if not text:
+                    await _send_clean_message(message, _("provider.prompt_name"), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+                    PENDING_INPUT[user_id] = ctx
+                    return
+                data["name"] = text
+                ctx["stage"] = "favicon"
+                PENDING_INPUT[user_id] = ctx
+                await _send_clean_message(message, _("provider.prompt_favicon").format(name=data["name"]), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+                return
+            
+            elif stage == "favicon":
+                favicon = text if text and text != "-" else None
+                data["favicon"] = favicon if favicon else "—"
+                ctx["stage"] = "login_url"
+                PENDING_INPUT[user_id] = ctx
+                favicon_display = favicon if favicon else "—"
+                await _send_clean_message(message, _("provider.prompt_login_url").format(name=data["name"], favicon=favicon_display), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+                return
+            
+            elif stage == "login_url":
+                login_url = text if text and text != "-" else None
+                data["login_url"] = login_url
+                # Создаем провайдера
+                await api_client.create_infra_provider(
+                    name=data["name"],
+                    favicon_link=data.get("favicon") if data.get("favicon") != "—" else None,
+                    login_url=login_url
+                )
+                PENDING_INPUT.pop(user_id, None)
+                await _send_clean_message(message, _("provider.created"), reply_markup=providers_menu_keyboard())
+                return
+        
         elif action == "provider_update":
+            parts = text.split()
             if len(parts) < 2:
                 raise ValueError
             provider_uuid = parts[0]
@@ -1922,69 +1962,128 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
             favicon = parts[2] if len(parts) > 2 and parts[2] != "-" else None
             login = parts[3] if len(parts) > 3 and parts[3] != "-" else None
             await api_client.update_infra_provider(provider_uuid, name=name, favicon_link=favicon, login_url=login)
+            PENDING_INPUT.pop(user_id, None)
             await _send_clean_message(message, _("provider.updated"), reply_markup=providers_menu_keyboard())
         elif action == "provider_delete":
+            parts = text.split()
             if len(parts) != 1:
                 raise ValueError
             await api_client.delete_infra_provider(parts[0])
+            PENDING_INPUT.pop(user_id, None)
             await _send_clean_message(message, _("provider.deleted"), reply_markup=providers_menu_keyboard())
         else:
+            PENDING_INPUT.pop(user_id, None)
             await _send_clean_message(message, _("errors.generic"), reply_markup=providers_menu_keyboard())
             return
     except ValueError:
-        prompt_key = "provider.prompt_create" if action == "provider_create" else (
-            "provider.prompt_update" if action == "provider_update" else "provider.prompt_delete"
-        )
-        await _send_clean_message(message, _(prompt_key), reply_markup=providers_menu_keyboard())
+        if action == "provider_create" and stage:
+            # Сохраняем контекст для повторного запроса
+            PENDING_INPUT[user_id] = ctx
+            if stage == "name":
+                await _send_clean_message(message, _("provider.prompt_name"), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+            elif stage == "favicon":
+                await _send_clean_message(message, _("provider.prompt_favicon").format(name=data.get("name", "")), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+            elif stage == "login_url":
+                await _send_clean_message(message, _("provider.prompt_login_url").format(name=data.get("name", ""), favicon=data.get("favicon", "—")), reply_markup=providers_menu_keyboard(), parse_mode="Markdown")
+        else:
+            prompt_key = "provider.prompt_update" if action == "provider_update" else "provider.prompt_delete"
+            PENDING_INPUT[user_id] = ctx
+            await _send_clean_message(message, _(prompt_key), reply_markup=providers_menu_keyboard())
     except UnauthorizedError:
+        PENDING_INPUT.pop(user_id, None)
         await _send_clean_message(message, _("errors.unauthorized"), reply_markup=providers_menu_keyboard())
     except ApiClientError:
+        PENDING_INPUT.pop(user_id, None)
         logger.exception("❌ Provider action failed: %s", action)
         await _send_clean_message(message, _("provider.invalid"), reply_markup=providers_menu_keyboard())
 
 
 async def _handle_billing_history_input(message: Message, ctx: dict) -> None:
     action = ctx.get("action")
-    parts = message.text.split()
+    text = message.text.strip()
     user_id = message.from_user.id
+    data = ctx.setdefault("data", {})
+    stage = ctx.get("stage", None)
     
     try:
-        if action == "billing_history_create_amount":
-            # Провайдер уже выбран, запрашиваем сумму и дату
+        if action == "billing_history_create":
+            # Пошаговый ввод для создания записи биллинга
+            if stage == "amount":
+                try:
+                    amount = float(text)
+                except ValueError:
+                    PENDING_INPUT[user_id] = ctx
+                    await _send_clean_message(message, _("billing.prompt_amount"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+                    return
+                data["amount"] = amount
+                ctx["stage"] = "billed_at"
+                PENDING_INPUT[user_id] = ctx
+                provider_name = ctx.get("provider_name", "—")
+                await _send_clean_message(message, _("billing.prompt_billed_at").format(provider_name=provider_name, amount=amount), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+                return
+            
+            elif stage == "billed_at":
+                if not text:
+                    PENDING_INPUT[user_id] = ctx
+                    provider_name = ctx.get("provider_name", "—")
+                    amount = data.get("amount", 0)
+                    await _send_clean_message(message, _("billing.prompt_billed_at").format(provider_name=provider_name, amount=amount), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+                    return
+                # Создаем запись биллинга
+                provider_uuid = ctx.get("provider_uuid")
+                amount = data.get("amount")
+                await api_client.create_infra_billing_record(provider_uuid, amount, text)
+                billing_text = await _fetch_billing_text()
+                PENDING_INPUT.pop(user_id, None)
+                await _send_clean_message(message, billing_text, reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+                return
+        
+        elif action == "billing_history_create_amount":
+            # Старый формат для обратной совместимости
+            parts = text.split()
             if len(parts) < 2:
                 raise ValueError
             provider_uuid = ctx.get("provider_uuid")
             amount = float(parts[0])
             billed_at = parts[1]
             await api_client.create_infra_billing_record(provider_uuid, amount, billed_at)
-            text = await _fetch_billing_text()
-            await _send_clean_message(message, text, reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+            billing_text = await _fetch_billing_text()
             PENDING_INPUT.pop(user_id, None)
+            await _send_clean_message(message, billing_text, reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
         elif action == "billing_history_delete":
+            parts = text.split()
             if len(parts) != 1:
                 raise ValueError
             await api_client.delete_infra_billing_record(parts[0])
-            text = await _fetch_billing_text()
-            await _send_clean_message(message, text, reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+            billing_text = await _fetch_billing_text()
             PENDING_INPUT.pop(user_id, None)
+            await _send_clean_message(message, billing_text, reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
         else:
-            await _send_clean_message(message, _("errors.generic"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
             PENDING_INPUT.pop(user_id, None)
+            await _send_clean_message(message, _("errors.generic"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
             return
     except ValueError:
-        if action == "billing_history_create_amount":
+        if action == "billing_history_create" and stage:
+            PENDING_INPUT[user_id] = ctx
+            if stage == "amount":
+                await _send_clean_message(message, _("billing.prompt_amount"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+            elif stage == "billed_at":
+                provider_name = ctx.get("provider_name", "—")
+                amount = data.get("amount", 0)
+                await _send_clean_message(message, _("billing.prompt_billed_at").format(provider_name=provider_name, amount=amount), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
+        elif action == "billing_history_create_amount":
             PENDING_INPUT[user_id] = ctx
             await _send_clean_message(message, _("billing.prompt_amount_date"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
         else:
             PENDING_INPUT[user_id] = ctx
             await _send_clean_message(message, _("billing.prompt_delete"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
     except UnauthorizedError:
-        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
         PENDING_INPUT.pop(user_id, None)
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
     except ApiClientError:
+        PENDING_INPUT.pop(user_id, None)
         logger.exception("❌ Billing history action failed: %s", action)
         await _send_clean_message(message, _("billing.invalid"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
-        PENDING_INPUT.pop(user_id, None)
 
 
 async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
