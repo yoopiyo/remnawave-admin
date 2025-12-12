@@ -685,7 +685,15 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
         try:
             text = await _fetch_nodes_text()
             from src.keyboards.nodes_menu import nodes_list_keyboard
-            await callback.message.edit_text(text, reply_markup=nodes_list_keyboard())
+            keyboard = nodes_list_keyboard()
+            try:
+                await callback.message.edit_text(text, reply_markup=keyboard)
+            except TelegramBadRequest as e:
+                # Если сообщение не изменилось, просто показываем уведомление
+                if "message is not modified" in str(e):
+                    await callback.answer(_("node.list_updated"), show_alert=False)
+                else:
+                    raise
         except UnauthorizedError:
             from src.keyboards.nodes_menu import nodes_list_keyboard
             await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_list_keyboard())
