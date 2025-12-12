@@ -761,6 +761,111 @@ async def cb_bulk_users(callback: CallbackQuery) -> None:
     await _edit_text_safe(callback.message, _("bulk.overview"), reply_markup=bulk_users_keyboard())
 
 
+@router.callback_query(F.data.startswith("input:skip:"))
+async def cb_input_skip(callback: CallbackQuery) -> None:
+    """Обработчик пропуска шага ввода."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 4:
+        return
+    
+    action = parts[2]  # provider_create, provider_update и т.д.
+    stage = parts[3]   # favicon, login_url, name и т.д.
+    user_id = callback.from_user.id
+    
+    if user_id not in PENDING_INPUT:
+        return
+    
+    ctx = PENDING_INPUT[user_id]
+    data = ctx.setdefault("data", {})
+    
+    # Обрабатываем пропуск шага
+    if action == "provider_create":
+        if stage == "favicon":
+            data["favicon"] = "—"
+            ctx["stage"] = "login_url"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("provider.prompt_login_url").format(name=data.get("name", ""), favicon="—"),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_create:login_url"),
+                parse_mode="Markdown"
+            )
+        elif stage == "login_url":
+            data["login_url"] = None
+            # Создаем провайдера
+            await api_client.create_infra_provider(
+                name=data["name"],
+                favicon_link=None,
+                login_url=None
+            )
+            PENDING_INPUT.pop(user_id, None)
+            await callback.message.edit_text(_("provider.created"), reply_markup=providers_menu_keyboard())
+    
+    elif action == "provider_update":
+        if stage == "name":
+            # Оставляем текущее имя
+            data["name"] = data.get("current_name", "")
+            ctx["stage"] = "favicon"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("provider.prompt_update_favicon").format(
+                    current_name=data["name"],
+                    current_favicon=data.get("current_favicon", "—") or "—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:favicon"),
+                parse_mode="Markdown"
+            )
+        elif stage == "favicon":
+            # Оставляем текущий favicon
+            data["favicon"] = data.get("current_favicon") or None
+            ctx["stage"] = "login_url"
+            PENDING_INPUT[user_id] = ctx
+            favicon_display = data["favicon"] if data["favicon"] else "—"
+            await callback.message.edit_text(
+                _("provider.prompt_update_login_url").format(
+                    current_name=data.get("name", ""),
+                    current_favicon=favicon_display,
+                    current_login_url=data.get("current_login_url", "—") or "—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:login_url"),
+                parse_mode="Markdown"
+            )
+        elif stage == "login_url":
+            # Оставляем текущий login_url
+            data["login_url"] = data.get("current_login_url") or None
+            # Обновляем провайдера
+            provider_uuid = ctx.get("provider_uuid")
+            current_name = data.get("current_name", "")
+            current_favicon = data.get("current_favicon") or ""
+            current_login_url = data.get("current_login_url") or ""
+            
+            # Определяем, что изменилось
+            name = None
+            if data.get("name") and data.get("name") != current_name:
+                name = data.get("name")
+            
+            favicon = None
+            new_favicon_val = data.get("favicon") or ""
+            if new_favicon_val != current_favicon:
+                favicon = new_favicon_val if new_favicon_val else None
+            
+            login_url = None
+            new_login_url_val = data.get("login_url") or ""
+            if new_login_url_val != current_login_url:
+                login_url = new_login_url_val if new_login_url_val else None
+            
+            await api_client.update_infra_provider(
+                provider_uuid,
+                name=name,
+                favicon_link=favicon,
+                login_url=login_url
+            )
+            PENDING_INPUT.pop(user_id, None)
+            await callback.message.edit_text(_("provider.updated"), reply_markup=providers_menu_keyboard())
+
+
 @router.callback_query(F.data.startswith("providers:"))
 async def cb_providers_actions(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
@@ -811,7 +916,7 @@ async def cb_providers_actions(callback: CallbackQuery) -> None:
             }
             await callback.message.edit_text(
                 _("provider.prompt_update_name").format(current_name=current_name),
-                reply_markup=input_keyboard("provider_update"),
+                reply_markup=input_keyboard("provider_update", allow_skip=True, skip_callback="input:skip:provider_update:name"),
                 parse_mode="Markdown"
             )
         except Exception:
@@ -1971,20 +2076,30 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                 data["name"] = text
                 ctx["stage"] = "favicon"
                 PENDING_INPUT[user_id] = ctx
-                await _send_clean_message(message, _("provider.prompt_favicon").format(name=data["name"]), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                await _send_clean_message(
+                    message,
+                    _("provider.prompt_favicon").format(name=data["name"]),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_create:favicon"),
+                    parse_mode="Markdown"
+                )
                 return
             
             elif stage == "favicon":
-                favicon = text if text and text != "-" else None
+                favicon = text if text else None
                 data["favicon"] = favicon if favicon else "—"
                 ctx["stage"] = "login_url"
                 PENDING_INPUT[user_id] = ctx
                 favicon_display = favicon if favicon else "—"
-                await _send_clean_message(message, _("provider.prompt_login_url").format(name=data["name"], favicon=favicon_display), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                await _send_clean_message(
+                    message,
+                    _("provider.prompt_login_url").format(name=data["name"], favicon=favicon_display),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_create:login_url"),
+                    parse_mode="Markdown"
+                )
                 return
             
             elif stage == "login_url":
-                login_url = text if text and text != "-" else None
+                login_url = text if text else None
                 data["login_url"] = login_url
                 # Создаем провайдера
                 await api_client.create_infra_provider(
@@ -1999,8 +2114,8 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
         elif action == "provider_update":
             # Пошаговый ввод для обновления провайдера
             if stage == "name":
-                # Обновляем имя (можно отправить "-" чтобы оставить текущее)
-                new_name = text if text and text != "-" else None
+                # Обновляем имя
+                new_name = text if text else None
                 if new_name:
                     data["name"] = new_name
                 else:
@@ -2013,14 +2128,14 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                         current_name=data["name"],
                         current_favicon=data.get("current_favicon", "—") or "—"
                     ),
-                    reply_markup=input_keyboard(action),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:favicon"),
                     parse_mode="Markdown"
                 )
                 return
             
             elif stage == "favicon":
-                # Обновляем favicon (можно отправить "-" чтобы оставить текущее или пропустить)
-                new_favicon = text if text and text != "-" else None
+                # Обновляем favicon
+                new_favicon = text if text else None
                 if new_favicon:
                     data["favicon"] = new_favicon
                 else:
@@ -2035,14 +2150,14 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                         current_favicon=favicon_display,
                         current_login_url=data.get("current_login_url", "—") or "—"
                     ),
-                    reply_markup=input_keyboard(action),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:login_url"),
                     parse_mode="Markdown"
                 )
                 return
             
             elif stage == "login_url":
-                # Обновляем login_url (можно отправить "-" чтобы оставить текущее или пропустить)
-                new_login_url = text if text and text != "-" else None
+                # Обновляем login_url
+                new_login_url = text if text else None
                 if new_login_url:
                     data["login_url"] = new_login_url
                 else:
@@ -2097,9 +2212,19 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
             if stage == "name":
                 await _send_clean_message(message, _("provider.prompt_name"), reply_markup=input_keyboard(action), parse_mode="Markdown")
             elif stage == "favicon":
-                await _send_clean_message(message, _("provider.prompt_favicon").format(name=data.get("name", "")), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                await _send_clean_message(
+                    message,
+                    _("provider.prompt_favicon").format(name=data.get("name", "")),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_create:favicon"),
+                    parse_mode="Markdown"
+                )
             elif stage == "login_url":
-                await _send_clean_message(message, _("provider.prompt_login_url").format(name=data.get("name", ""), favicon=data.get("favicon", "—")), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                await _send_clean_message(
+                    message,
+                    _("provider.prompt_login_url").format(name=data.get("name", ""), favicon=data.get("favicon", "—")),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_create:login_url"),
+                    parse_mode="Markdown"
+                )
         elif action == "provider_update" and stage:
             # Сохраняем контекст для повторного запроса
             PENDING_INPUT[user_id] = ctx
@@ -2107,7 +2232,7 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                 await _send_clean_message(
                     message,
                     _("provider.prompt_update_name").format(current_name=data.get("current_name", "")),
-                    reply_markup=input_keyboard(action),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:name"),
                     parse_mode="Markdown"
                 )
             elif stage == "favicon":
@@ -2117,7 +2242,7 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                         current_name=data.get("name", data.get("current_name", "")),
                         current_favicon=data.get("current_favicon", "—") or "—"
                     ),
-                    reply_markup=input_keyboard(action),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:favicon"),
                     parse_mode="Markdown"
                 )
             elif stage == "login_url":
@@ -2128,7 +2253,7 @@ async def _handle_provider_input(message: Message, ctx: dict) -> None:
                         current_favicon=data.get("favicon", data.get("current_favicon", "—")) or "—",
                         current_login_url=data.get("current_login_url", "—") or "—"
                     ),
-                    reply_markup=input_keyboard(action),
+                    reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:provider_update:login_url"),
                     parse_mode="Markdown"
                 )
         elif action == "provider_delete":

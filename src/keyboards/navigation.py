@@ -35,7 +35,7 @@ def nav_keyboard(back_to: str | None = None) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(inline_keyboard=[nav_row(back_to)])
 
 
-def input_keyboard(action: str | None = None) -> InlineKeyboardMarkup:
+def input_keyboard(action: str | None = None, allow_skip: bool = False, skip_callback: str | None = None) -> InlineKeyboardMarkup:
     """Клавиатура для использования во время ввода данных (только Назад и Главное меню)."""
     # Определяем целевое меню на основе action
     back_to = None
@@ -52,4 +52,9 @@ def input_keyboard(action: str | None = None) -> InlineKeyboardMarkup:
             back_to = NavTarget.BULK_MENU
         elif action.startswith("template_"):
             back_to = NavTarget.TEMPLATES_MENU
-    return nav_keyboard(back_to)
+    
+    buttons = nav_row(back_to)
+    if allow_skip and skip_callback:
+        buttons.insert(0, InlineKeyboardButton(text=_("actions.skip_step"), callback_data=skip_callback))
+    
+    return InlineKeyboardMarkup(inline_keyboard=[buttons])
