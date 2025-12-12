@@ -55,6 +55,8 @@ def input_keyboard(action: str | None = None, allow_skip: bool = False, skip_cal
             back_to = NavTarget.TEMPLATES_MENU
         elif action == "node_create":
             back_to = NavTarget.NODES_MENU
+        elif action == "host_create":
+            back_to = NavTarget.NODES_MENU
     
     buttons = nav_row(back_to)
     if allow_skip and skip_callback:

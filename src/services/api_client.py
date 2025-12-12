@@ -246,6 +246,23 @@ class RemnawaveApiClient:
     async def disable_hosts(self, host_uuids: list[str]) -> dict:
         return await self._post("/api/hosts/bulk/disable", json={"uuids": host_uuids})
 
+    async def create_host(
+        self,
+        remark: str,
+        address: str,
+        port: int,
+        tag: str | None = None,
+    ) -> dict:
+        """Создание нового хоста."""
+        payload: dict[str, object] = {
+            "remark": remark,
+            "address": address,
+            "port": port,
+        }
+        if tag:
+            payload["tag"] = tag
+        return await self._post("/api/hosts", json=payload)
+
     # --- Subscriptions ---
     async def get_subscription_info(self, short_uuid: str) -> dict:
         return await self._get(f"/api/sub/{short_uuid}/info")

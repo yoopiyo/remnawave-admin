@@ -165,6 +165,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_bulk_users_input(message, ctx)
     elif action == "node_create":
         await _handle_node_create_input(message, ctx)
+    elif action == "host_create":
+        await _handle_host_create_input(message, ctx)
     else:
         await _send_clean_message(message, _("errors.generic"))
 
@@ -1210,6 +1212,29 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             except ApiClientError:
                 PENDING_INPUT.pop(user_id, None)
                 logger.exception("❌ Node creation failed")
+                await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
+    
+    elif action == "host_create":
+        # Обработка пропуска шагов при создании хоста
+        if stage == "tag":
+            data["tag"] = None
+            # Создаем хост
+            try:
+                await api_client.create_host(
+                    remark=data["remark"],
+                    address=data["address"],
+                    port=data["port"],
+                    tag=None,
+                )
+                PENDING_INPUT.pop(user_id, None)
+                hosts_text = await _fetch_hosts_text()
+                await callback.message.edit_text(hosts_text, reply_markup=nodes_menu_keyboard())
+            except UnauthorizedError:
+                PENDING_INPUT.pop(user_id, None)
+                await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+            except ApiClientError:
+                PENDING_INPUT.pop(user_id, None)
+                logger.exception("❌ Host creation failed")
                 await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
 
 
@@ -3071,6 +3096,101 @@ async def _handle_node_create_input(message: Message, ctx: dict) -> None:
     
     except Exception as e:
         logger.exception("❌ Node create input error")
+        PENDING_INPUT.pop(user_id, None)
+        await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+
+
+async def _handle_host_create_input(message: Message, ctx: dict) -> None:
+    """Обработчик пошагового ввода для создания хоста."""
+    action = ctx.get("action")
+    user_id = message.from_user.id
+    text = message.text.strip()
+    data = ctx.setdefault("data", {})
+    stage = ctx.get("stage", None)
+    
+    try:
+        if stage == "remark":
+            if not text or len(text) < 1:
+                await _send_clean_message(message, _("host.prompt_remark"), reply_markup=input_keyboard(action))
+                PENDING_INPUT[user_id] = ctx
+                return
+            data["remark"] = text
+            ctx["stage"] = "address"
+            PENDING_INPUT[user_id] = ctx
+            await _send_clean_message(
+                message,
+                _("host.prompt_address").format(remark=data["remark"]),
+                reply_markup=input_keyboard(action)
+            )
+            return
+        
+        elif stage == "address":
+            if not text or len(text) < 2:
+                await _send_clean_message(
+                    message,
+                    _("host.prompt_address").format(remark=data.get("remark", "")),
+                    reply_markup=input_keyboard(action)
+                )
+                PENDING_INPUT[user_id] = ctx
+                return
+            data["address"] = text
+            ctx["stage"] = "port"
+            PENDING_INPUT[user_id] = ctx
+            await _send_clean_message(
+                message,
+                _("host.prompt_port").format(remark=data["remark"], address=data["address"]),
+                reply_markup=input_keyboard(action)
+            )
+            return
+        
+        elif stage == "port":
+            try:
+                port = int(text)
+                if port < 1 or port > 65535:
+                    raise ValueError
+                data["port"] = port
+            except ValueError:
+                await _send_clean_message(
+                    message,
+                    _("host.invalid_port"),
+                    reply_markup=input_keyboard(action)
+                )
+                PENDING_INPUT[user_id] = ctx
+                return
+            ctx["stage"] = "tag"
+            PENDING_INPUT[user_id] = ctx
+            await _send_clean_message(
+                message,
+                _("host.prompt_tag").format(remark=data["remark"], address=data["address"], port=data["port"]),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:host_create:tag")
+            )
+            return
+        
+        elif stage == "tag":
+            data["tag"] = text if text else None
+            
+            # Создаем хост
+            try:
+                await api_client.create_host(
+                    remark=data["remark"],
+                    address=data["address"],
+                    port=data["port"],
+                    tag=data.get("tag"),
+                )
+                PENDING_INPUT.pop(user_id, None)
+                hosts_text = await _fetch_hosts_text()
+                await _send_clean_message(message, hosts_text, reply_markup=nodes_menu_keyboard())
+            except UnauthorizedError:
+                PENDING_INPUT.pop(user_id, None)
+                await _send_clean_message(message, _("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+            except ApiClientError:
+                PENDING_INPUT.pop(user_id, None)
+                logger.exception("❌ Host creation failed")
+                await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+            return
+    
+    except Exception as e:
+        logger.exception("❌ Host create input error")
         PENDING_INPUT.pop(user_id, None)
         await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
 

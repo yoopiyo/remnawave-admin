@@ -207,11 +207,18 @@
     "summary": "{statusEmoji} {remark}\n📍 {address}\n🏷 Tag: {tag}\n🆔 UUID: {uuid}",
     "enable": "Enable",
     "disable": "Disable",
+    "create": "➕ Create host",
     "list_title": "🖥 Hosts • total {total}",
     "list_item": "{statusEmoji} {remark} — {address} | tag {tag}",
     "list_more": "…and {count} more",
     "list_hint": "ℹ️ Host details: /host <uuid>",
-    "list_empty": "No hosts."
+    "list_empty": "No hosts.",
+    "prompt_remark": "🖥 Create Host\n\nEnter host name/description:",
+    "prompt_address": "🖥 Create Host\n\nName: {remark}\n\nEnter host address:",
+    "prompt_port": "🖥 Create Host\n\nName: {remark}\nAddress: {address}\n\nEnter port (1-65535):",
+    "prompt_tag": "🖥 Create Host\n\nName: {remark}\nAddress: {address}\nPort: {port}\n\nEnter tag or press \"Skip step\" button:",
+    "created": "✅ Host created successfully!",
+    "invalid_port": "⚠️ Port must be a number between 1 and 65535."
   },
   "sub": {
     "usage": "🧾 Send /sub <short_uuid> to view subscription.",

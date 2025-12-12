@@ -45,6 +45,7 @@ def nodes_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=_("actions.nodes"), callback_data="menu:nodes")],
             [InlineKeyboardButton(text=_("node.create"), callback_data="nodes:create")],
             [InlineKeyboardButton(text=_("actions.hosts"), callback_data="menu:hosts")],
+            [InlineKeyboardButton(text=_("host.create"), callback_data="hosts:create")],
             [InlineKeyboardButton(text=_("actions.configs"), callback_data="menu:configs")],
             nav_row(NavTarget.MAIN_MENU),
         ]
