@@ -170,6 +170,51 @@ class RemnawaveApiClient:
     async def get_node(self, node_uuid: str) -> dict:
         return await self._get(f"/api/nodes/{node_uuid}")
 
+    async def create_node(
+        self,
+        name: str,
+        address: str,
+        config_profile_uuid: str,
+        active_inbounds: list[str],
+        port: int | None = None,
+        country_code: str | None = None,
+        provider_uuid: str | None = None,
+        is_traffic_tracking_active: bool = False,
+        traffic_limit_bytes: int | None = None,
+        notify_percent: int | None = None,
+        traffic_reset_day: int | None = None,
+        consumption_multiplier: float | None = None,
+        tags: list[str] | None = None,
+    ) -> dict:
+        """Создание новой ноды."""
+        payload: dict[str, object] = {
+            "name": name,
+            "address": address,
+            "configProfile": {
+                "activeConfigProfileUuid": config_profile_uuid,
+                "activeInbounds": active_inbounds,
+            },
+        }
+        if port is not None:
+            payload["port"] = port
+        if country_code:
+            payload["countryCode"] = country_code
+        if provider_uuid:
+            payload["providerUuid"] = provider_uuid
+        if is_traffic_tracking_active:
+            payload["isTrafficTrackingActive"] = is_traffic_tracking_active
+        if traffic_limit_bytes is not None:
+            payload["trafficLimitBytes"] = traffic_limit_bytes
+        if notify_percent is not None:
+            payload["notifyPercent"] = notify_percent
+        if traffic_reset_day is not None:
+            payload["trafficResetDay"] = traffic_reset_day
+        if consumption_multiplier is not None:
+            payload["consumptionMultiplier"] = consumption_multiplier
+        if tags:
+            payload["tags"] = tags
+        return await self._post("/api/nodes", json=payload)
+
     async def enable_node(self, node_uuid: str) -> dict:
         return await self._post(f"/api/nodes/{node_uuid}/actions/enable")
 

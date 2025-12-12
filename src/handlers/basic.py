@@ -53,6 +53,7 @@ from src.services.api_client import (
 )
 from src.utils.auth import is_admin
 from src.utils.formatters import (
+    format_bytes,
     build_host_summary,
     build_node_summary,
     build_user_summary,
@@ -161,6 +162,8 @@ async def handle_pending(message: Message) -> None:
         await _handle_user_edit_input(message, ctx)
     elif action.startswith("bulk_users_"):
         await _handle_bulk_users_input(message, ctx)
+    elif action == "node_create":
+        await _handle_node_create_input(message, ctx)
     else:
         await _send_clean_message(message, _("errors.generic"))
 
@@ -661,6 +664,193 @@ async def cb_nodes(callback: CallbackQuery) -> None:
     await callback.message.edit_text(text, reply_markup=nodes_menu_keyboard())
 
 
+@router.callback_query(F.data.startswith("nodes:") | F.data.startswith("node_create:"))
+async def cb_nodes_actions(callback: CallbackQuery) -> None:
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    # Обрабатываем как nodes:action, так и node_create:action
+    if callback.data.startswith("node_create:"):
+        action = parts[1] if len(parts) > 1 else None
+    else:
+        action = parts[1] if len(parts) > 1 else None
+    
+    if action == "create":
+        # Начинаем создание ноды
+        PENDING_INPUT[callback.from_user.id] = {
+            "action": "node_create",
+            "stage": "name",
+            "data": {}
+        }
+        await callback.message.edit_text(
+            _("node.prompt_name"),
+            reply_markup=input_keyboard("node_create"),
+            parse_mode="Markdown"
+        )
+    elif action == "select_profile":
+        # Выбор профиля конфигурации
+        if len(parts) < 3:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
+            return
+        profile_uuid = parts[2]
+        user_id = callback.from_user.id
+        if user_id not in PENDING_INPUT:
+            return
+        ctx = PENDING_INPUT[user_id]
+        data = ctx.setdefault("data", {})
+        
+        try:
+            # Получаем информацию о профиле и его инбаундах
+            profile_data = await api_client.get_config_profile_computed(profile_uuid)
+            profile_info = profile_data.get("response", profile_data)
+            inbounds = profile_info.get("inbounds", [])
+            
+            if not inbounds:
+                await callback.message.edit_text(
+                    _("node.no_inbounds"),
+                    reply_markup=input_keyboard("node_create"),
+                    parse_mode="Markdown"
+                )
+                return
+            
+            data["config_profile_uuid"] = profile_uuid
+            data["profile_name"] = profile_info.get("name", "n/a")
+            data["available_inbounds"] = inbounds
+            data["selected_inbounds"] = []
+            ctx["stage"] = "inbounds"
+            PENDING_INPUT[user_id] = ctx
+            
+            # Показываем список инбаундов для выбора
+            keyboard = _node_inbounds_keyboard(inbounds, [])
+            await callback.message.edit_text(
+                _("node.prompt_inbounds").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    profile_name=data["profile_name"]
+                ),
+                reply_markup=keyboard,
+                parse_mode="Markdown"
+            )
+        except Exception:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard(), parse_mode="Markdown")
+    elif action == "toggle_inbound":
+        # Переключение выбора инбаунда
+        if len(parts) < 3:
+            return
+        inbound_uuid = parts[2]
+        user_id = callback.from_user.id
+        if user_id not in PENDING_INPUT:
+            return
+        ctx = PENDING_INPUT[user_id]
+        data = ctx.setdefault("data", {})
+        selected = data.get("selected_inbounds", [])
+        available = data.get("available_inbounds", [])
+        
+        if inbound_uuid in selected:
+            selected.remove(inbound_uuid)
+        else:
+            selected.append(inbound_uuid)
+        
+        data["selected_inbounds"] = selected
+        PENDING_INPUT[user_id] = ctx
+        
+        # Обновляем клавиатуру
+        keyboard = _node_inbounds_keyboard(available, selected)
+        await callback.message.edit_text(
+            _("node.prompt_inbounds").format(
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                profile_name=data.get("profile_name", "")
+            ),
+            reply_markup=keyboard,
+            parse_mode="Markdown"
+        )
+    elif action == "confirm_inbounds":
+        # Подтверждение выбора инбаундов
+        user_id = callback.from_user.id
+        if user_id not in PENDING_INPUT:
+            return
+        ctx = PENDING_INPUT[user_id]
+        data = ctx.setdefault("data", {})
+        selected = data.get("selected_inbounds", [])
+        
+        if not selected:
+            await callback.answer(_("node.no_inbounds"), show_alert=True)
+            return
+        
+        ctx["stage"] = "port"
+        PENDING_INPUT[user_id] = ctx
+        
+        await callback.message.edit_text(
+            _("node.prompt_port").format(
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                profile_name=data.get("profile_name", ""),
+                inbounds_count=len(selected)
+            ),
+            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:port"),
+            parse_mode="Markdown"
+        )
+    elif action == "select_provider":
+        # Выбор провайдера
+        if len(parts) < 3:
+            return
+        provider_uuid = parts[2] if parts[2] != "none" else None
+        user_id = callback.from_user.id
+        if user_id not in PENDING_INPUT:
+            return
+        ctx = PENDING_INPUT[user_id]
+        data = ctx.setdefault("data", {})
+        data["provider_uuid"] = provider_uuid
+        ctx["stage"] = "traffic_tracking"
+        PENDING_INPUT[user_id] = ctx
+        
+        provider_name = "—" if not provider_uuid else "—"  # Можно получить имя провайдера
+        await callback.message.edit_text(
+            _("node.prompt_traffic_tracking").format(
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                port=data.get("port", "—") or "—",
+                country=data.get("country_code", "—") or "—",
+                provider=provider_name,
+                profile_name=data.get("profile_name", ""),
+                inbounds_count=len(data.get("selected_inbounds", []))
+            ),
+            reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
+            parse_mode="Markdown"
+        )
+    elif action == "toggle_traffic_tracking":
+        # Переключение отслеживания трафика
+        if len(parts) < 3:
+            return
+        value = parts[2]  # yes или no
+        user_id = callback.from_user.id
+        if user_id not in PENDING_INPUT:
+            return
+        ctx = PENDING_INPUT[user_id]
+        data = ctx.setdefault("data", {})
+        data["is_traffic_tracking_active"] = (value == "yes")
+        ctx["stage"] = "traffic_limit"
+        PENDING_INPUT[user_id] = ctx
+        
+        tracking_display = _("node.yes") if data["is_traffic_tracking_active"] else _("node.no")
+        await callback.message.edit_text(
+            _("node.prompt_traffic_limit").format(
+                name=data.get("name", ""),
+                address=data.get("address", ""),
+                port=data.get("port", "—") or "—",
+                country=data.get("country_code", "—") or "—",
+                provider=data.get("provider_name", "—") or "—",
+                profile_name=data.get("profile_name", ""),
+                inbounds_count=len(data.get("selected_inbounds", [])),
+                tracking=tracking_display
+            ),
+            reply_markup=input_keyboard("node_create", allow_skip=True, skip_callback="input:skip:node_create:traffic_limit"),
+            parse_mode="Markdown"
+        )
+
+
 @router.callback_query(F.data == "menu:hosts")
 async def cb_hosts(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
@@ -866,6 +1056,173 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
             )
             PENDING_INPUT.pop(user_id, None)
             await callback.message.edit_text(_("provider.updated"), reply_markup=providers_menu_keyboard())
+    
+    elif action == "node_create":
+        # Обработка пропуска шагов при создании ноды
+        if stage == "port":
+            data["port"] = None
+            ctx["stage"] = "country"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("node.prompt_country").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port="—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", []))
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country"),
+                parse_mode="Markdown"
+            )
+        elif stage == "country":
+            data["country_code"] = None
+            ctx["stage"] = "provider"
+            PENDING_INPUT[user_id] = ctx
+            # Показываем список провайдеров
+            try:
+                providers_data = await api_client.get_infra_providers()
+                providers = providers_data.get("response", {}).get("providers", [])
+                keyboard = _node_providers_keyboard(providers) if providers else input_keyboard(action, allow_skip=True, skip_callback="nodes:select_provider:none")
+                await callback.message.edit_text(
+                    _("node.prompt_provider").format(
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=data.get("port", "—") or "—",
+                        country="—",
+                        profile_name=data.get("profile_name", ""),
+                        inbounds_count=len(data.get("selected_inbounds", []))
+                    ),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                data["provider_uuid"] = None
+                ctx["stage"] = "traffic_tracking"
+                PENDING_INPUT[user_id] = ctx
+                await callback.message.edit_text(
+                    _("node.prompt_traffic_tracking").format(
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=data.get("port", "—") or "—",
+                        country="—",
+                        provider="—",
+                        profile_name=data.get("profile_name", ""),
+                        inbounds_count=len(data.get("selected_inbounds", []))
+                    ),
+                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
+                    parse_mode="Markdown"
+                )
+        elif stage == "traffic_limit":
+            data["traffic_limit_bytes"] = None
+            ctx["stage"] = "notify_percent"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("node.prompt_notify_percent").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit="—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent"),
+                parse_mode="Markdown"
+            )
+        elif stage == "notify_percent":
+            data["notify_percent"] = None
+            ctx["stage"] = "traffic_reset_day"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("node.prompt_traffic_reset_day").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent="—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day"),
+                parse_mode="Markdown"
+            )
+        elif stage == "traffic_reset_day":
+            data["traffic_reset_day"] = None
+            ctx["stage"] = "consumption_multiplier"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("node.prompt_consumption_multiplier").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day="—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier"),
+                parse_mode="Markdown"
+            )
+        elif stage == "consumption_multiplier":
+            data["consumption_multiplier"] = None
+            ctx["stage"] = "tags"
+            PENDING_INPUT[user_id] = ctx
+            await callback.message.edit_text(
+                _("node.prompt_tags").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—",
+                    multiplier="—"
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
+                parse_mode="Markdown"
+            )
+        elif stage == "tags":
+            data["tags"] = None
+            # Создаем ноду
+            try:
+                await api_client.create_node(
+                    name=data["name"],
+                    address=data["address"],
+                    config_profile_uuid=data["config_profile_uuid"],
+                    active_inbounds=data["selected_inbounds"],
+                    port=data.get("port"),
+                    country_code=data.get("country_code"),
+                    provider_uuid=data.get("provider_uuid"),
+                    is_traffic_tracking_active=data.get("is_traffic_tracking_active", False),
+                    traffic_limit_bytes=data.get("traffic_limit_bytes"),
+                    notify_percent=data.get("notify_percent"),
+                    traffic_reset_day=data.get("traffic_reset_day"),
+                    consumption_multiplier=data.get("consumption_multiplier"),
+                    tags=data.get("tags"),
+                )
+                PENDING_INPUT.pop(user_id, None)
+                nodes_text = await _fetch_nodes_text()
+                await callback.message.edit_text(nodes_text, reply_markup=nodes_menu_keyboard())
+            except UnauthorizedError:
+                PENDING_INPUT.pop(user_id, None)
+                await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+            except ApiClientError:
+                PENDING_INPUT.pop(user_id, None)
+                logger.exception("❌ Node creation failed")
+                await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
 
 
 @router.callback_query(F.data.startswith("providers:"))
@@ -2362,6 +2719,384 @@ async def _handle_billing_history_input(message: Message, ctx: dict) -> None:
         await _send_clean_message(message, _("billing.invalid"), reply_markup=billing_menu_keyboard(), parse_mode="Markdown")
 
 
+async def _handle_node_create_input(message: Message, ctx: dict) -> None:
+    """Обработчик пошагового ввода для создания ноды."""
+    action = ctx.get("action")
+    user_id = message.from_user.id
+    text = message.text.strip()
+    data = ctx.setdefault("data", {})
+    stage = ctx.get("stage", None)
+    
+    try:
+        if stage == "name":
+            if not text or len(text) < 3 or len(text) > 30:
+                await _send_clean_message(message, _("node.prompt_name"), reply_markup=input_keyboard(action), parse_mode="Markdown")
+                PENDING_INPUT[user_id] = ctx
+                return
+            data["name"] = text
+            ctx["stage"] = "address"
+            PENDING_INPUT[user_id] = ctx
+            await _send_clean_message(
+                message,
+                _("node.prompt_address").format(name=data["name"]),
+                reply_markup=input_keyboard(action),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "address":
+            if not text or len(text) < 2:
+                await _send_clean_message(
+                    message,
+                    _("node.prompt_address").format(name=data.get("name", "")),
+                    reply_markup=input_keyboard(action),
+                    parse_mode="Markdown"
+                )
+                PENDING_INPUT[user_id] = ctx
+                return
+            data["address"] = text
+            ctx["stage"] = "config_profile"
+            PENDING_INPUT[user_id] = ctx
+            
+            # Показываем список профилей конфигурации
+            try:
+                profiles_data = await api_client.get_config_profiles()
+                profiles = profiles_data.get("response", {}).get("configProfiles", [])
+                if not profiles:
+                    await _send_clean_message(message, _("node.no_profiles"), reply_markup=nodes_menu_keyboard(), parse_mode="Markdown")
+                    PENDING_INPUT.pop(user_id, None)
+                    return
+                keyboard = _node_config_profiles_keyboard(profiles)
+                await _send_clean_message(
+                    message,
+                    _("node.prompt_config_profile").format(name=data["name"], address=data["address"]),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard(), parse_mode="Markdown")
+                PENDING_INPUT.pop(user_id, None)
+            return
+        
+        elif stage == "port":
+            if text:
+                try:
+                    port = int(text)
+                    if port < 1 or port > 65535:
+                        raise ValueError
+                    data["port"] = port
+                except ValueError:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_port"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:port"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+            else:
+                data["port"] = None
+            ctx["stage"] = "country"
+            PENDING_INPUT[user_id] = ctx
+            port_display = str(data["port"]) if data.get("port") else "—"
+            await _send_clean_message(
+                message,
+                _("node.prompt_country").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=port_display,
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", []))
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country"),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "country":
+            if text:
+                if len(text) != 2:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_country"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:country"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+                data["country_code"] = text.upper()
+            else:
+                data["country_code"] = None
+            ctx["stage"] = "provider"
+            PENDING_INPUT[user_id] = ctx
+            
+            # Показываем список провайдеров
+            try:
+                providers_data = await api_client.get_infra_providers()
+                providers = providers_data.get("response", {}).get("providers", [])
+                keyboard = _node_providers_keyboard(providers) if providers else input_keyboard(action, allow_skip=True, skip_callback="nodes:select_provider:none")
+                country_display = data.get("country_code", "—") or "—"
+                await _send_clean_message(
+                    message,
+                    _("node.prompt_provider").format(
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=data.get("port", "—") or "—",
+                        country=country_display,
+                        profile_name=data.get("profile_name", ""),
+                        inbounds_count=len(data.get("selected_inbounds", []))
+                    ),
+                    reply_markup=keyboard,
+                    parse_mode="Markdown"
+                )
+            except Exception:
+                # Если провайдеры недоступны, пропускаем
+                data["provider_uuid"] = None
+                ctx["stage"] = "traffic_tracking"
+                PENDING_INPUT[user_id] = ctx
+                country_display = data.get("country_code", "—") or "—"
+                await _send_clean_message(
+                    message,
+                    _("node.prompt_traffic_tracking").format(
+                        name=data.get("name", ""),
+                        address=data.get("address", ""),
+                        port=data.get("port", "—") or "—",
+                        country=country_display,
+                        provider="—",
+                        profile_name=data.get("profile_name", ""),
+                        inbounds_count=len(data.get("selected_inbounds", []))
+                    ),
+                    reply_markup=_node_yes_no_keyboard("node_create", "traffic_tracking"),
+                    parse_mode="Markdown"
+                )
+            return
+        
+        elif stage == "traffic_limit":
+            if text:
+                try:
+                    limit = int(text)
+                    if limit < 0:
+                        raise ValueError
+                    data["traffic_limit_bytes"] = limit
+                except ValueError:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_traffic_limit"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_limit"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+            else:
+                data["traffic_limit_bytes"] = None
+            ctx["stage"] = "notify_percent"
+            PENDING_INPUT[user_id] = ctx
+            limit_display = format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—"
+            await _send_clean_message(
+                message,
+                _("node.prompt_notify_percent").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=limit_display
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent"),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "notify_percent":
+            if text:
+                try:
+                    percent = int(text)
+                    if percent < 0 or percent > 100:
+                        raise ValueError
+                    data["notify_percent"] = percent
+                except ValueError:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_notify_percent"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:notify_percent"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+            else:
+                data["notify_percent"] = None
+            ctx["stage"] = "traffic_reset_day"
+            PENDING_INPUT[user_id] = ctx
+            percent_display = str(data["notify_percent"]) if data.get("notify_percent") is not None else "—"
+            await _send_clean_message(
+                message,
+                _("node.prompt_traffic_reset_day").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=percent_display
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day"),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "traffic_reset_day":
+            if text:
+                try:
+                    day = int(text)
+                    if day < 1 or day > 31:
+                        raise ValueError
+                    data["traffic_reset_day"] = day
+                except ValueError:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_reset_day"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:traffic_reset_day"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+            else:
+                data["traffic_reset_day"] = None
+            ctx["stage"] = "consumption_multiplier"
+            PENDING_INPUT[user_id] = ctx
+            day_display = str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—"
+            await _send_clean_message(
+                message,
+                _("node.prompt_consumption_multiplier").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=day_display
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier"),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "consumption_multiplier":
+            if text:
+                try:
+                    multiplier = float(text)
+                    if multiplier < 0.1:
+                        raise ValueError
+                    data["consumption_multiplier"] = multiplier
+                except ValueError:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_multiplier"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:consumption_multiplier"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+            else:
+                data["consumption_multiplier"] = None
+            ctx["stage"] = "tags"
+            PENDING_INPUT[user_id] = ctx
+            multiplier_display = str(data["consumption_multiplier"]) if data.get("consumption_multiplier") else "—"
+            await _send_clean_message(
+                message,
+                _("node.prompt_tags").format(
+                    name=data.get("name", ""),
+                    address=data.get("address", ""),
+                    port=data.get("port", "—") or "—",
+                    country=data.get("country_code", "—") or "—",
+                    provider=data.get("provider_name", "—") or "—",
+                    profile_name=data.get("profile_name", ""),
+                    inbounds_count=len(data.get("selected_inbounds", [])),
+                    tracking=_("node.yes") if data.get("is_traffic_tracking_active") else _("node.no"),
+                    traffic_limit=format_bytes(data["traffic_limit_bytes"]) if data.get("traffic_limit_bytes") else "—",
+                    notify_percent=str(data["notify_percent"]) if data.get("notify_percent") is not None else "—",
+                    reset_day=str(data["traffic_reset_day"]) if data.get("traffic_reset_day") else "—",
+                    multiplier=multiplier_display
+                ),
+                reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
+                parse_mode="Markdown"
+            )
+            return
+        
+        elif stage == "tags":
+            if text:
+                tags = [tag.strip().upper() for tag in text.split(",") if tag.strip()]
+                # Проверяем формат тегов
+                import re
+                tag_pattern = re.compile(r"^[A-Z0-9_:]+$")
+                if len(tags) > 10:
+                    await _send_clean_message(
+                        message,
+                        _("node.invalid_tags"),
+                        reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
+                        parse_mode="Markdown"
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+                for tag in tags:
+                    if not tag_pattern.match(tag) or len(tag) > 36:
+                        await _send_clean_message(
+                            message,
+                            _("node.invalid_tags"),
+                            reply_markup=input_keyboard(action, allow_skip=True, skip_callback="input:skip:node_create:tags"),
+                            parse_mode="Markdown"
+                        )
+                        PENDING_INPUT[user_id] = ctx
+                        return
+                data["tags"] = tags
+            else:
+                data["tags"] = None
+            
+            # Создаем ноду
+            try:
+                await api_client.create_node(
+                    name=data["name"],
+                    address=data["address"],
+                    config_profile_uuid=data["config_profile_uuid"],
+                    active_inbounds=data["selected_inbounds"],
+                    port=data.get("port"),
+                    country_code=data.get("country_code"),
+                    provider_uuid=data.get("provider_uuid"),
+                    is_traffic_tracking_active=data.get("is_traffic_tracking_active", False),
+                    traffic_limit_bytes=data.get("traffic_limit_bytes"),
+                    notify_percent=data.get("notify_percent"),
+                    traffic_reset_day=data.get("traffic_reset_day"),
+                    consumption_multiplier=data.get("consumption_multiplier"),
+                    tags=data.get("tags"),
+                )
+                PENDING_INPUT.pop(user_id, None)
+                nodes_text = await _fetch_nodes_text()
+                await _send_clean_message(message, nodes_text, reply_markup=nodes_menu_keyboard())
+            except UnauthorizedError:
+                PENDING_INPUT.pop(user_id, None)
+                await _send_clean_message(message, _("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+            except ApiClientError:
+                PENDING_INPUT.pop(user_id, None)
+                logger.exception("❌ Node creation failed")
+                await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+            return
+    
+    except Exception as e:
+        logger.exception("❌ Node create input error")
+        PENDING_INPUT.pop(user_id, None)
+        await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+
+
 async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
     action = ctx.get("action")
     text = (message.text or "").strip()
@@ -2455,6 +3190,59 @@ def _system_nodes_profiles_keyboard(profiles: list[dict]) -> InlineKeyboardMarku
         uuid = profile.get("uuid", "")
         rows.append([InlineKeyboardButton(text=name, callback_data=f"system:nodes:profile:{uuid}")])
     rows.append(nav_row(NavTarget.SYSTEM_MENU))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _node_config_profiles_keyboard(profiles: list[dict]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора профиля конфигурации при создании ноды."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for profile in sorted(profiles, key=lambda p: p.get("viewPosition", 0))[:10]:
+        name = profile.get("name", "n/a")
+        uuid = profile.get("uuid", "")
+        rows.append([InlineKeyboardButton(text=name, callback_data=f"nodes:select_profile:{uuid}")])
+    rows.append(nav_row(NavTarget.NODES_MENU))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _node_inbounds_keyboard(inbounds: list[dict], selected: list[str]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора инбаундов при создании ноды."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for inbound in inbounds[:20]:  # Ограничиваем до 20 для удобства
+        name = inbound.get("remark") or inbound.get("tag") or "n/a"
+        uuid = inbound.get("uuid", "")
+        is_selected = uuid in selected
+        prefix = "✅ " if is_selected else "☐ "
+        rows.append([InlineKeyboardButton(text=f"{prefix}{name}", callback_data=f"nodes:toggle_inbound:{uuid}")])
+    
+    # Кнопка подтверждения выбора
+    if selected:
+        rows.append([InlineKeyboardButton(text=_("node.select_inbounds_done").format(count=len(selected)), callback_data="nodes:confirm_inbounds")])
+    
+    rows.append(nav_row(NavTarget.NODES_MENU))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _node_providers_keyboard(providers: list[dict]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора провайдера при создании ноды."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for provider in sorted(providers, key=lambda p: p.get("name", ""))[:10]:
+        name = provider.get("name", "n/a")
+        uuid = provider.get("uuid", "")
+        rows.append([InlineKeyboardButton(text=name, callback_data=f"nodes:select_provider:{uuid}")])
+    rows.append([InlineKeyboardButton(text=_("actions.skip_step"), callback_data="nodes:select_provider:none")])
+    rows.append(nav_row(NavTarget.NODES_MENU))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _node_yes_no_keyboard(action: str, field: str) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора Да/Нет."""
+    rows = [
+        [
+            InlineKeyboardButton(text=_("node.yes"), callback_data=f"{action}:toggle_{field}:yes"),
+            InlineKeyboardButton(text=_("node.no"), callback_data=f"{action}:toggle_{field}:no"),
+        ]
+    ]
+    rows.append(nav_row(NavTarget.NODES_MENU))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 
