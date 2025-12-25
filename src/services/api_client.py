@@ -46,7 +46,8 @@ class RemnawaveApiClient:
             logger.warning("API error %s on GET %s: %s", status, url, exc.response.text)
             raise ApiClientError from exc
         except httpx.HTTPError as exc:
-            logger.warning("HTTP client error on GET %s: %s", url, exc)
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on GET %s: %s (%s)", url, exc, error_type)
             raise ApiClientError from exc
 
     async def _post(self, url: str, json: dict | None = None) -> dict:
@@ -63,7 +64,8 @@ class RemnawaveApiClient:
             logger.warning("API error %s on POST %s: %s", status, url, exc.response.text)
             raise ApiClientError from exc
         except httpx.HTTPError as exc:
-            logger.warning("HTTP client error on POST %s: %s", url, exc)
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on POST %s: %s (%s)", url, exc, error_type)
             raise ApiClientError from exc
 
     async def _patch(self, url: str, json: dict | None = None) -> dict:
@@ -80,7 +82,8 @@ class RemnawaveApiClient:
             logger.warning("API error %s on PATCH %s: %s", status, url, exc.response.text)
             raise ApiClientError from exc
         except httpx.HTTPError as exc:
-            logger.warning("HTTP client error on PATCH %s: %s", url, exc)
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on PATCH %s: %s (%s)", url, exc, error_type)
             raise ApiClientError from exc
 
     # --- Settings ---
@@ -290,7 +293,8 @@ class RemnawaveApiClient:
             logger.warning("API error %s on DELETE /api/nodes/%s: %s", status, node_uuid, exc.response.text)
             raise ApiClientError from exc
         except httpx.HTTPError as exc:
-            logger.warning("HTTP client error on DELETE /api/nodes/%s: %s", node_uuid, exc)
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/nodes/%s: %s (%s)", node_uuid, exc, error_type)
             raise ApiClientError from exc
 
     async def get_nodes_realtime_usage(self) -> dict:
@@ -353,6 +357,10 @@ class RemnawaveApiClient:
                 raise NotFoundError from exc
             logger.warning("API error %s on DELETE %s: %s", status, response.url, exc.response.text)
             raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/tokens/%s: %s (%s)", token_uuid, exc, error_type)
+            raise ApiClientError from exc
 
     # --- Subscription templates ---
     async def get_templates(self) -> dict:
@@ -373,6 +381,10 @@ class RemnawaveApiClient:
             if status == 404:
                 raise NotFoundError from exc
             logger.warning("API error %s on DELETE %s: %s", status, response.url, exc.response.text)
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/subscription-templates/%s: %s (%s)", template_uuid, exc, error_type)
             raise ApiClientError from exc
     async def create_template(self, name: str, template_type: str) -> dict:
         return await self._post(
@@ -426,6 +438,10 @@ class RemnawaveApiClient:
             if status == 404:
                 raise NotFoundError from exc
             logger.warning("API error %s on DELETE /api/snippets: %s", status, exc.response.text)
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/snippets: %s (%s)", exc, error_type)
             raise ApiClientError from exc
 
     # --- Config profiles ---
@@ -495,6 +511,10 @@ class RemnawaveApiClient:
                 raise NotFoundError from exc
             logger.warning("API error %s on DELETE /api/infra-billing/providers/%s: %s", status, provider_uuid, exc.response.text)
             raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/infra-billing/providers/%s: %s (%s)", provider_uuid, exc, error_type)
+            raise ApiClientError from exc
 
     async def create_infra_billing_record(self, provider_uuid: str, amount: float, billed_at: str) -> dict:
         return await self._post(
@@ -515,6 +535,10 @@ class RemnawaveApiClient:
             logger.warning(
                 "API error %s on DELETE /api/infra-billing/history/%s: %s", status, record_uuid, exc.response.text
             )
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/infra-billing/history/%s: %s (%s)", record_uuid, exc, error_type)
             raise ApiClientError from exc
 
     async def create_infra_billing_node(
@@ -555,6 +579,10 @@ class RemnawaveApiClient:
             logger.warning(
                 "API error %s on DELETE /api/infra-billing/nodes/%s: %s", status, record_uuid, exc.response.text
             )
+            raise ApiClientError from exc
+        except httpx.HTTPError as exc:
+            error_type = type(exc).__name__
+            logger.warning("HTTP client error on DELETE /api/infra-billing/nodes/%s: %s (%s)", record_uuid, exc, error_type)
             raise ApiClientError from exc
 
     # --- Users bulk ---
