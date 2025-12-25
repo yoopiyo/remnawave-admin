@@ -4,7 +4,6 @@ from src.handlers.basic import router as basic_router
 from src.handlers.billing import router as billing_router
 from src.handlers.bulk import router as bulk_router
 from src.handlers.commands import router as commands_router
-from src.handlers.common import router as common_router
 from src.handlers.errors import errors_handler
 from src.handlers.hosts import router as hosts_router
 from src.handlers.navigation import router as navigation_router
