@@ -12,6 +12,8 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-INFO}
     networks:
       - remnawave-network
+    # Бот будет ждать, пока API будет доступен (но не блокирует старт, если API еще не готов)
+    # Повторные попытки подключения реализованы в коде бота
 
 networks:
   remnawave-network:

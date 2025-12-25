@@ -1,4 +1,5 @@
 import asyncio
+import sys
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
@@ -11,15 +12,43 @@ from src.handlers import register_handlers
 
 
 async def check_api_connection() -> bool:
-    """Проверяет подключение к API."""
-    try:
-        logger.info("Checking API connection...")
-        await api_client.get_health()
-        logger.info("✅ API connection successful")
-        return True
-    except Exception as exc:
-        logger.error("❌ API connection failed: %s", exc)
-        return False
+    """Проверяет подключение к API с повторными попытками."""
+    from src.config import get_settings
+    settings = get_settings()
+    max_attempts = 5
+    delay = 3  # секунды между попытками
+    
+    api_url = str(settings.api_base_url).rstrip("/")
+    logger.info("🔍 Checking API connection to: %s", api_url)
+    
+    for attempt in range(1, max_attempts + 1):
+        try:
+            logger.info("Attempting connection... (attempt %d/%d)", attempt, max_attempts)
+            await api_client.get_health()
+            logger.info("✅ API connection successful")
+            return True
+        except Exception as exc:
+            error_msg = str(exc)
+            error_type = type(exc).__name__
+            logger.warning(
+                "❌ API connection failed (attempt %d/%d) [%s]: %s",
+                attempt, max_attempts, error_type, error_msg
+            )
+            if attempt < max_attempts:
+                logger.info("⏳ Retrying in %d seconds...", delay)
+                await asyncio.sleep(delay)
+            else:
+                logger.error("❌ All connection attempts failed")
+                logger.error(
+                    "💡 Troubleshooting tips:\n"
+                    "  1. Check that API_BASE_URL is correct (should be http://remnawave:3000 for Docker)\n"
+                    "  2. Verify that both containers are in the same Docker network (remnawave-network)\n"
+                    "  3. Ensure the API container (remnawave) is running and healthy\n"
+                    "  4. Check API_TOKEN is set correctly in .env file"
+                )
+                return False
+    
+    return False
 
 
 async def main() -> None:
@@ -32,7 +61,7 @@ async def main() -> None:
             "Please check API_BASE_URL and API_TOKEN in your .env file. "
             "Make sure the API server is running and accessible."
         )
-        return
+        sys.exit(1)
 
     # parse_mode is left as default (None) to avoid HTML parsing issues with plain text translations
     bot = Bot(token=settings.bot_token)
