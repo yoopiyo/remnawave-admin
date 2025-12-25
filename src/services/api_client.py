@@ -481,6 +481,29 @@ class RemnawaveApiClient:
             payload["tag"] = tag
         return await self._post("/api/hosts", json=payload)
 
+    async def update_host(
+        self,
+        host_uuid: str,
+        remark: str | None = None,
+        address: str | None = None,
+        port: int | None = None,
+        tag: str | None = None,
+        inbound: dict | None = None,
+    ) -> dict:
+        """Обновление хоста."""
+        payload: dict[str, object] = {"uuid": host_uuid}
+        if remark is not None:
+            payload["remark"] = remark
+        if address is not None:
+            payload["address"] = address
+        if port is not None:
+            payload["port"] = port
+        if tag is not None:
+            payload["tag"] = tag
+        if inbound is not None:
+            payload["inbound"] = inbound
+        return await self._patch("/api/hosts", json=payload)
+
     # --- Subscriptions ---
     async def get_subscription_info(self, short_uuid: str) -> dict:
         return await self._get(f"/api/sub/{short_uuid}/info")

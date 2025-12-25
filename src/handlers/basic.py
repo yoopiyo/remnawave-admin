@@ -19,6 +19,7 @@ from src.keyboards.main_menu import (
     billing_overview_keyboard,
     bulk_menu_keyboard,
 )
+from src.keyboards.hosts_menu import hosts_menu_keyboard
 from src.keyboards.navigation import NavTarget, nav_keyboard, nav_row, input_keyboard
 from src.keyboards.user_create import (
     user_create_description_keyboard,
@@ -407,7 +408,7 @@ async def cmd_hosts(message: Message) -> None:
     if await _not_admin(message):
         return
     text = await _fetch_hosts_text()
-    await _send_clean_message(message, text, reply_markup=nodes_menu_keyboard())
+    await _send_clean_message(message, text, reply_markup=hosts_menu_keyboard())
 
 
 @router.message(Command("host"))
@@ -877,7 +878,31 @@ async def cb_hosts(callback: CallbackQuery) -> None:
         return
     await callback.answer()
     text = await _fetch_hosts_text()
-    await callback.message.edit_text(text, reply_markup=nodes_menu_keyboard())
+    await callback.message.edit_text(text, reply_markup=hosts_menu_keyboard())
+
+
+@router.callback_query(F.data == "hosts:create")
+async def cb_hosts_create(callback: CallbackQuery) -> None:
+    """Обработчик создания хоста."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    user_id = callback.from_user.id
+    
+    # Инициализируем контекст для создания хоста
+    ctx = {
+        "action": "host_create",
+        "stage": "remark",
+        "data": {},
+        "bot_chat_id": callback.message.chat.id,
+        "bot_message_id": callback.message.message_id,
+    }
+    PENDING_INPUT[user_id] = ctx
+    
+    await callback.message.edit_text(
+        _("host.prompt_remark"),
+        reply_markup=input_keyboard("host_create")
+    )
 
 
 @router.callback_query(F.data == "menu:subs")
@@ -1254,14 +1279,14 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
                 )
                 PENDING_INPUT.pop(user_id, None)
                 hosts_text = await _fetch_hosts_text()
-                await callback.message.edit_text(hosts_text, reply_markup=nodes_menu_keyboard())
+                await callback.message.edit_text(hosts_text, reply_markup=hosts_menu_keyboard())
             except UnauthorizedError:
                 PENDING_INPUT.pop(user_id, None)
-                await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+                await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
             except ApiClientError:
                 PENDING_INPUT.pop(user_id, None)
                 logger.exception("❌ Host creation failed")
-                await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_menu_keyboard())
+                await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
     elif len(parts) >= 4 and parts[0] == "nef" and parts[1] == "skip":
         # nef:skip:{node_uuid}:{field}
         node_uuid = parts[2]
@@ -3407,20 +3432,20 @@ async def _handle_host_create_input(message: Message, ctx: dict) -> None:
                 )
                 PENDING_INPUT.pop(user_id, None)
                 hosts_text = await _fetch_hosts_text()
-                await _send_clean_message(message, hosts_text, reply_markup=nodes_menu_keyboard())
+                await _send_clean_message(message, hosts_text, reply_markup=hosts_menu_keyboard())
             except UnauthorizedError:
                 PENDING_INPUT.pop(user_id, None)
-                await _send_clean_message(message, _("errors.unauthorized"), reply_markup=nodes_menu_keyboard())
+                await _send_clean_message(message, _("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
             except ApiClientError:
                 PENDING_INPUT.pop(user_id, None)
                 logger.exception("❌ Host creation failed")
-                await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+                await _send_clean_message(message, _("errors.generic"), reply_markup=hosts_menu_keyboard())
             return
     
     except Exception as e:
         logger.exception("❌ Host create input error")
         PENDING_INPUT.pop(user_id, None)
-        await _send_clean_message(message, _("errors.generic"), reply_markup=nodes_menu_keyboard())
+        await _send_clean_message(message, _("errors.generic"), reply_markup=hosts_menu_keyboard())
 
 
 async def _handle_billing_nodes_input(message: Message, ctx: dict) -> None:
@@ -4052,7 +4077,7 @@ async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
         return
     if destination == NavTarget.HOSTS_MENU:
         text = await _fetch_hosts_text()
-        await _send_clean_message(target, text, reply_markup=nodes_menu_keyboard())
+        await _send_clean_message(target, text, reply_markup=hosts_menu_keyboard())
         return
     if destination == NavTarget.CONFIGS_MENU:
         text = await _fetch_configs_text()
