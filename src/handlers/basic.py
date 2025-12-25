@@ -1993,8 +1993,11 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                 else:
                     button_text = f"🔗 Link {i+1}"
                 
-                # Используем URL кнопку для прямой ссылки
-                keyboard_rows.append([InlineKeyboardButton(text=button_text, url=link)])
+                # Используем callback кнопку, так как Telegram не поддерживает нестандартные протоколы в URL
+                keyboard_rows.append([InlineKeyboardButton(
+                    text=button_text,
+                    callback_data=f"user_sub_link:{user_uuid}:{i}"
+                )])
         
         # Добавляем кнопку для Happ crypto link
         if happ_crypto_link:
@@ -2019,6 +2022,79 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
     except ApiClientError:
         logger.exception("Failed to fetch configs for user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("user_sub_link:"))
+async def cb_user_sub_link(callback: CallbackQuery) -> None:
+    """Обработчик для отображения подписной ссылки."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        return
+    user_uuid = parts[1]
+    try:
+        link_index = int(parts[2])
+    except ValueError:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(_get_user_detail_back_target(callback.from_user.id)))
+        return
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        # Получаем информацию о пользователе
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        short_uuid = user_info.get("shortUuid")
+        
+        if not short_uuid:
+            await callback.message.edit_text(
+                _("user.no_subscription_url"),
+                reply_markup=nav_keyboard(back_to)
+            )
+            return
+        
+        # Получаем подписные ссылки
+        sub_info = await api_client.get_subscription_info(short_uuid)
+        sub_response = sub_info.get("response", {})
+        subscription_links = sub_response.get("links", [])
+        
+        if link_index >= len(subscription_links):
+            await callback.message.edit_text(
+                _("user.link_not_found"),
+                reply_markup=nav_keyboard(back_to)
+            )
+            return
+        
+        link = subscription_links[link_index]
+        
+        # Определяем тип ссылки для заголовка
+        if link.startswith("vless://"):
+            link_type = "🔷 VLESS"
+        elif link.startswith("ss://"):
+            link_type = "🔶 SS"
+        elif link.startswith("trojan://"):
+            link_type = "🔴 Trojan"
+        elif link.startswith("vmess://"):
+            link_type = "🟣 VMess"
+        else:
+            link_type = "🔗 Link"
+        
+        # Отображаем ссылку
+        text = f"{link_type}\n\n<code>{_esc(link)}</code>"
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_("user.back_to_configs"), callback_data=f"user_configs:{user_uuid}")],
+            nav_row(back_to),
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get subscription link for user_uuid=%s link_index=%s actor_id=%s", user_uuid, link_index, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 

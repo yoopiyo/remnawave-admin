@@ -89,6 +89,7 @@
     "no_subscription_links": "⚠️ No subscription links available.",
     "no_subscription_url": "⚠️ User has no subscription URL.",
     "happ_crypto_link_error": "⚠️ Failed to get Happ crypto link.",
+    "link_not_found": "⚠️ Link not found.",
     "back_to_configs": "↩️ Back to links",
     "created": "✅ User created\n👤 {username} ({status})\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n💬 TG: {telegramId}\n⏳ Expires: {expire}\n🔗 Subscription: {subscriptionUrl}",
     "prompt_username": "🆕 Enter username (letters/numbers/hyphen).",
