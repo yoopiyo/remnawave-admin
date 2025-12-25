@@ -141,7 +141,8 @@ async def cmd_start(message: Message) -> None:
         return
 
     await _send_clean_message(message, _("bot.welcome"))
-    await _send_clean_message(message, _("bot.menu"), reply_markup=main_menu_keyboard())
+    menu_text = await _fetch_main_menu_text()
+    await _send_clean_message(message, menu_text, reply_markup=main_menu_keyboard())
 
 
 @router.message(F.text & ~F.text.startswith("/"))
@@ -4930,7 +4931,8 @@ async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
     _clear_user_state(user_id, keep_search=keep_search, keep_subs=keep_subs)
 
     if destination == NavTarget.MAIN_MENU:
-        await _send_clean_message(target, _("bot.menu"), reply_markup=main_menu_keyboard())
+        menu_text = await _fetch_main_menu_text()
+        await _send_clean_message(target, menu_text, reply_markup=main_menu_keyboard())
         return
     if destination == NavTarget.USERS_MENU:
         await _send_clean_message(target, _("bot.menu"), reply_markup=users_menu_keyboard())
@@ -5667,6 +5669,61 @@ async def _handle_user_create_callback(callback: CallbackQuery) -> None:
         await _send_user_create_prompt(
             callback, _build_user_create_preview(data), user_create_confirm_keyboard(), ctx=ctx
         )
+
+
+async def _fetch_main_menu_text() -> str:
+    """Получает текст для главного меню с краткой статистикой."""
+    try:
+        # Получаем основную статистику системы
+        data = await api_client.get_stats()
+        res = data.get("response", {})
+        users = res.get("users", {})
+        online = res.get("onlineStats", {})
+        nodes = res.get("nodes", {})
+        
+        total_users = users.get("totalUsers", 0)
+        online_now = online.get("onlineNow", 0)
+        nodes_online = nodes.get("totalOnline", 0)
+        
+        # Получаем количество хостов
+        try:
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            total_hosts = len(hosts)
+            enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
+        except Exception:
+            total_hosts = "—"
+            enabled_hosts = "—"
+        
+        # Получаем количество нод
+        try:
+            nodes_data = await api_client.get_nodes()
+            nodes_list = nodes_data.get("response", [])
+            total_nodes = len(nodes_list)
+            enabled_nodes = sum(1 for n in nodes_list if not n.get("isDisabled"))
+        except Exception:
+            total_nodes = "—"
+            enabled_nodes = "—"
+        
+        lines = [
+            _("bot.menu"),
+            "",
+            _("bot.menu_stats").format(
+                users=total_users,
+                online=online_now,
+                nodes=total_nodes,
+                nodes_enabled=enabled_nodes,
+                nodes_online=nodes_online,
+                hosts=total_hosts,
+                hosts_enabled=enabled_hosts,
+            ),
+        ]
+        
+        return "\n".join(lines)
+    except Exception:
+        # Если не удалось получить статистику, возвращаем простое меню
+        logger.exception("Failed to fetch main menu stats")
+        return _("bot.menu")
 
 
 async def _fetch_health_text() -> str:
