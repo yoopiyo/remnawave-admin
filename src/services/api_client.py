@@ -1,3 +1,5 @@
+import asyncio
+
 import httpx
 from httpx import HTTPStatusError
 
@@ -32,23 +34,41 @@ class RemnawaveApiClient:
             headers["Authorization"] = f"Bearer {self.settings.api_token}"
         return headers
 
-    async def _get(self, url: str) -> dict:
-        try:
-            response = await self._client.get(url)
-            response.raise_for_status()
-            return response.json()
-        except HTTPStatusError as exc:
-            status = exc.response.status_code
-            if status in (401, 403):
-                raise UnauthorizedError from exc
-            if status == 404:
-                raise NotFoundError from exc
-            logger.warning("API error %s on GET %s: %s", status, url, exc.response.text)
-            raise ApiClientError from exc
-        except httpx.HTTPError as exc:
-            error_type = type(exc).__name__
-            logger.warning("HTTP client error on GET %s: %s (%s)", url, exc, error_type)
-            raise ApiClientError from exc
+    async def _get(self, url: str, max_retries: int = 3) -> dict:
+        """Выполняет GET запрос с retry для сетевых ошибок."""
+        last_exc = None
+        for attempt in range(max_retries):
+            try:
+                response = await self._client.get(url)
+                response.raise_for_status()
+                return response.json()
+            except HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status in (401, 403):
+                    raise UnauthorizedError from exc
+                if status == 404:
+                    raise NotFoundError from exc
+                logger.warning("API error %s on GET %s: %s", status, url, exc.response.text)
+                raise ApiClientError from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                last_exc = exc
+                error_type = type(exc).__name__
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    logger.warning(
+                        "HTTP client error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        url, exc, error_type, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning("HTTP client error on GET %s: %s (%s) - max retries reached", url, exc, error_type)
+            except httpx.HTTPError as exc:
+                error_type = type(exc).__name__
+                logger.warning("HTTP client error on GET %s: %s (%s)", url, exc, error_type)
+                raise ApiClientError from exc
+        
+        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
+        raise ApiClientError from last_exc
 
     async def _post(self, url: str, json: dict | None = None) -> dict:
         try:
@@ -122,10 +142,50 @@ class RemnawaveApiClient:
         return await self._post(f"/api/users/{user_uuid}/actions/revoke")
 
     async def get_internal_squads(self) -> dict:
-        return await self._get("/api/internal-squads")
+        """Получает список внутренних squads с увеличенным таймаутом и retry."""
+        return await self._get_with_timeout("/api/internal-squads", timeout=30.0, max_retries=3)
 
     async def get_external_squads(self) -> dict:
-        return await self._get("/api/external-squads")
+        """Получает список внешних squads с увеличенным таймаутом и retry."""
+        return await self._get_with_timeout("/api/external-squads", timeout=30.0, max_retries=3)
+
+    async def _get_with_timeout(self, url: str, timeout: float = 30.0, max_retries: int = 3) -> dict:
+        """Выполняет GET запрос с кастомным таймаутом и retry для сетевых ошибок."""
+        last_exc = None
+        custom_timeout = httpx.Timeout(timeout, connect=10.0)
+        
+        for attempt in range(max_retries):
+            try:
+                response = await self._client.get(url, timeout=custom_timeout)
+                response.raise_for_status()
+                return response.json()
+            except HTTPStatusError as exc:
+                status = exc.response.status_code
+                if status in (401, 403):
+                    raise UnauthorizedError from exc
+                if status == 404:
+                    raise NotFoundError from exc
+                logger.warning("API error %s on GET %s: %s", status, url, exc.response.text)
+                raise ApiClientError from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                last_exc = exc
+                error_type = type(exc).__name__
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    logger.warning(
+                        "HTTP client error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        url, exc, error_type, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.warning("HTTP client error on GET %s: %s (%s) - max retries reached", url, exc, error_type)
+            except httpx.HTTPError as exc:
+                error_type = type(exc).__name__
+                logger.warning("HTTP client error on GET %s: %s (%s)", url, exc, error_type)
+                raise ApiClientError from exc
+        
+        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
+        raise ApiClientError from last_exc
 
     async def create_user(
         self,

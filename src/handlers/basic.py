@@ -4371,8 +4371,8 @@ async def _show_squad_selection_for_edit(callback: CallbackQuery, user_uuid: str
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
         return
-    except ApiClientError:
-        logger.exception("⚠️ Failed to load internal squads")
+    except ApiClientError as exc:
+        logger.warning("⚠️ Failed to load internal squads: %s", exc)
     except Exception:
         logger.exception("⚠️ Unexpected error while loading internal squads")
 
@@ -4384,8 +4384,8 @@ async def _show_squad_selection_for_edit(callback: CallbackQuery, user_uuid: str
         except UnauthorizedError:
             await callback.message.edit_text(_("errors.unauthorized"), reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
             return
-        except ApiClientError:
-            logger.exception("⚠️ Failed to load external squads")
+        except ApiClientError as exc:
+            logger.warning("⚠️ Failed to load external squads: %s", exc)
         except Exception:
             logger.exception("⚠️ Unexpected error while loading external squads")
 
@@ -4413,8 +4413,8 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
     except UnauthorizedError:
         await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard(), ctx=ctx)
         return
-    except ApiClientError:
-        logger.exception("⚠️ Failed to load internal squads")
+    except ApiClientError as exc:
+        logger.warning("⚠️ Failed to load internal squads: %s", exc)
     except Exception:
         logger.exception("⚠️ Unexpected error while loading internal squads")
 
@@ -4427,8 +4427,8 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
         except UnauthorizedError:
             await _send_user_create_prompt(target, _("errors.unauthorized"), users_menu_keyboard(), ctx=ctx)
             return
-        except ApiClientError:
-            logger.exception("⚠️ Failed to load external squads")
+        except ApiClientError as exc:
+            logger.warning("⚠️ Failed to load external squads: %s", exc)
         except Exception:
             logger.exception("⚠️ Unexpected error while loading external squads")
 
