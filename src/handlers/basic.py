@@ -5396,12 +5396,37 @@ async def _fetch_hosts_text() -> str:
 async def _fetch_tokens_text() -> str:
     try:
         data = await api_client.get_tokens()
-        tokens = data.get("response", {}).get("apiKeys", [])
+        logger.debug("Tokens API response keys: %s", list(data.keys()) if isinstance(data, dict) else "not a dict")
+        
+        # Пробуем разные варианты структуры ответа
+        tokens = None
+        if isinstance(data, dict):
+            # Стандартная структура: response.apiKeys
+            tokens = data.get("response", {}).get("apiKeys")
+            if tokens is None:
+                # Альтернативная структура: apiKeys напрямую
+                tokens = data.get("apiKeys")
+            if tokens is None and "response" in data:
+                # Если response есть, но не словарь
+                response = data.get("response")
+                if isinstance(response, list):
+                    tokens = response
+                elif isinstance(response, dict):
+                    tokens = response.get("apiKeys") or response.get("tokens")
+        
+        if tokens is None:
+            tokens = []
+        
+        if not isinstance(tokens, list):
+            logger.error("Tokens is not a list: %s (type: %s)", tokens, type(tokens))
+            tokens = []
+        
+        logger.info("Fetched %d tokens", len(tokens))
         return build_tokens_list(tokens, _)
     except UnauthorizedError:
         return _("errors.unauthorized")
-    except ApiClientError:
-        logger.exception("⚠️ Tokens fetch failed")
+    except ApiClientError as exc:
+        logger.exception("⚠️ Tokens fetch failed: %s", exc)
         return _("errors.generic")
 
 
