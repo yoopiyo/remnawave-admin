@@ -31,6 +31,7 @@ from src.keyboards.user_create import (
     user_create_confirm_keyboard,
 )
 from src.keyboards.host_actions import host_actions_keyboard
+from src.keyboards.host_edit import host_edit_keyboard
 from src.keyboards.node_actions import node_actions_keyboard
 from src.keyboards.token_actions import token_actions_keyboard
 from src.keyboards.template_actions import template_actions_keyboard
@@ -984,6 +985,170 @@ async def cb_hosts_select_inbound(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
 
 
+@router.callback_query(F.data.startswith("hosts:"))
+async def cb_hosts_actions(callback: CallbackQuery) -> None:
+    """Обработчик действий с хостами."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    action = parts[1] if len(parts) > 1 else None
+    
+    if action == "list":
+        # Обновляем список хостов
+        try:
+            text, keyboard = await _fetch_hosts_with_keyboard()
+            try:
+                await callback.message.edit_text(text, reply_markup=keyboard)
+            except TelegramBadRequest as e:
+                # Если сообщение не изменилось, просто показываем уведомление
+                if "message is not modified" in str(e):
+                    await callback.answer(_("host.list_updated"), show_alert=False)
+                else:
+                    raise
+        except UnauthorizedError:
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+        except ApiClientError:
+            logger.exception("❌ Hosts fetch failed")
+            await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+    elif action == "update":
+        # Показываем список хостов для выбора
+        try:
+            text, keyboard = await _fetch_hosts_with_keyboard()
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except UnauthorizedError:
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+        except ApiClientError:
+            logger.exception("❌ Hosts fetch failed")
+            await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+
+
+@router.callback_query(F.data.startswith("host_edit:"))
+async def cb_host_edit_menu(callback: CallbackQuery) -> None:
+    """Обработчик входа в меню редактирования хоста."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    _prefix, host_uuid = callback.data.split(":")
+    try:
+        host = await api_client.get_host(host_uuid)
+        summary = build_host_summary(host, _)
+        await callback.message.edit_text(
+            summary,
+            reply_markup=host_edit_keyboard(host_uuid, back_to=NavTarget.HOSTS_MENU),
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+    except NotFoundError:
+        await callback.message.edit_text(_("host.not_found"), reply_markup=hosts_menu_keyboard())
+    except ApiClientError:
+        logger.exception("❌ Host edit menu failed host_uuid=%s actor_id=%s", host_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+
+
+@router.callback_query(F.data.startswith("hef:"))
+async def cb_host_edit_field(callback: CallbackQuery) -> None:
+    """Обработчик редактирования полей хоста."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    # patterns: hef:{field}::{host_uuid} или hef:{field}:{value}:{host_uuid}
+    if len(parts) < 3:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+        return
+    _prefix, field = parts[0], parts[1]
+    value = parts[2] if len(parts) > 3 and parts[2] else None
+    host_uuid = parts[-1]
+    back_to = NavTarget.HOSTS_MENU
+
+    # Загружаем текущие данные хоста
+    try:
+        host = await api_client.get_host(host_uuid)
+        info = host.get("response", host)
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+        return
+    except NotFoundError:
+        await callback.message.edit_text(_("host.not_found"), reply_markup=hosts_menu_keyboard())
+        return
+    except ApiClientError:
+        logger.exception("❌ Failed to fetch host for edit host_uuid=%s", host_uuid)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+        return
+
+    # Если значение уже передано (например, выбор инбаунда)
+    if value and field == "inbound":
+        # Обработка выбора инбаунда будет реализована отдельно
+        await callback.message.edit_text(_("errors.generic"), reply_markup=host_edit_keyboard(host_uuid, back_to=back_to))
+        return
+
+    # Показываем промпт для ввода нового значения
+    user_id = callback.from_user.id
+    ctx = {
+        "action": "host_edit",
+        "field": field,
+        "uuid": host_uuid,
+        "back_to": back_to,
+        "bot_chat_id": callback.message.chat.id,
+        "bot_message_id": callback.message.message_id,
+    }
+    PENDING_INPUT[user_id] = ctx
+
+    prompt = ""
+    if field == "remark":
+        prompt = _("host.prompt_edit_remark")
+    elif field == "address":
+        prompt = _("host.prompt_edit_address")
+    elif field == "port":
+        prompt = _("host.prompt_edit_port")
+    elif field == "tag":
+        prompt = _("host.prompt_edit_tag")
+    elif field == "inbound":
+        # Показываем список инбаундов для выбора
+        try:
+            # Получаем текущий профиль конфигурации хоста
+            inbound_info = info.get("inbound", {})
+            config_profile_uuid = inbound_info.get("configProfileUuid")
+            if not config_profile_uuid:
+                await callback.message.edit_text(
+                    _("host.no_config_profiles"),
+                    reply_markup=host_edit_keyboard(host_uuid, back_to=back_to)
+                )
+                return
+            
+            profile_data = await api_client.get_config_profile_computed(config_profile_uuid)
+            profile_info = profile_data.get("response", profile_data)
+            inbounds = profile_info.get("inbounds", [])
+            if not inbounds:
+                await callback.message.edit_text(
+                    _("host.no_inbounds"),
+                    reply_markup=host_edit_keyboard(host_uuid, back_to=back_to)
+                )
+                return
+            keyboard = _host_inbounds_keyboard(inbounds)
+            # Заменяем callback_data для редактирования
+            for row in keyboard.inline_keyboard:
+                for button in row:
+                    if button.callback_data and button.callback_data.startswith("hosts:select_inbound:"):
+                        inbound_uuid = button.callback_data.split(":")[-1]
+                        button.callback_data = f"hef:inbound:{inbound_uuid}:{host_uuid}"
+            await callback.message.edit_text(
+                _("host.prompt_edit_inbound"),
+                reply_markup=keyboard
+            )
+            return
+        except Exception:
+            logger.exception("❌ Failed to load inbounds for host edit")
+            await callback.message.edit_text(_("errors.generic"), reply_markup=host_edit_keyboard(host_uuid, back_to=back_to))
+            return
+    else:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=host_edit_keyboard(host_uuid, back_to=back_to))
+        return
+
+    await callback.message.edit_text(prompt, reply_markup=input_keyboard("host_edit", allow_skip=(field == "tag")))
+
+
 @router.callback_query(F.data == "menu:subs")
 async def cb_subs(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
@@ -1370,6 +1535,41 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
                 logger.exception("❌ Failed to load config profiles for host creation")
                 await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
                 PENDING_INPUT.pop(user_id, None)
+    elif len(parts) >= 4 and parts[0] == "hef" and parts[1] == "inbound" and len(parts) >= 4:
+        # hef:inbound:{inbound_uuid}:{host_uuid} - выбор инбаунда для редактирования
+        inbound_uuid = parts[2]
+        host_uuid = parts[3]
+        back_to = NavTarget.HOSTS_MENU
+        
+        try:
+            # Получаем текущий профиль конфигурации хоста
+            host = await api_client.get_host(host_uuid)
+            info = host.get("response", host)
+            inbound_info = info.get("inbound", {})
+            config_profile_uuid = inbound_info.get("configProfileUuid")
+            
+            if not config_profile_uuid:
+                await callback.message.edit_text(
+                    _("host.no_config_profiles"),
+                    reply_markup=host_edit_keyboard(host_uuid, back_to=back_to)
+                )
+                return
+            
+            # Обновляем хост с новым инбаундом
+            await _apply_host_update(
+                callback,
+                host_uuid,
+                {
+                    "inbound": {
+                        "configProfileUuid": config_profile_uuid,
+                        "configProfileInboundUuid": inbound_uuid,
+                    }
+                },
+                back_to=back_to
+            )
+        except Exception:
+            logger.exception("❌ Failed to update host inbound")
+            await callback.message.edit_text(_("errors.generic"), reply_markup=host_edit_keyboard(host_uuid, back_to=back_to))
     elif len(parts) >= 4 and parts[0] == "nef" and parts[1] == "skip":
         # nef:skip:{node_uuid}:{field}
         node_uuid = parts[2]
@@ -5526,6 +5726,71 @@ async def _fetch_hosts_text() -> str:
     except ApiClientError:
         logger.exception("⚠️ Hosts fetch failed")
         return _("errors.generic")
+
+
+async def _fetch_hosts_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
+    """Получает список хостов с клавиатурой для редактирования."""
+    try:
+        data = await api_client.get_hosts()
+        hosts = data.get("response", [])
+        if not hosts:
+            return _("host.list_empty"), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.HOSTS_MENU)])
+        
+        sorted_hosts = sorted(hosts, key=lambda h: h.get("viewPosition", 0))
+        
+        # Вычисляем статистику
+        total_hosts = len(hosts)
+        enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
+        disabled_hosts = total_hosts - enabled_hosts
+        
+        # Формируем текст со статистикой и списком хостов
+        lines = [
+            _("host.list_title").format(total=total_hosts),
+            "",
+            f"✅ Включено: {enabled_hosts} | ⛔️ Выключено: {disabled_hosts}",
+            "",
+        ]
+        
+        rows: list[list[InlineKeyboardButton]] = []
+        
+        for host in sorted_hosts[:20]:
+            status = "DISABLED" if host.get("isDisabled") else "ENABLED"
+            status_emoji = "🟡" if status == "DISABLED" else "🟢"
+            address = f"{host.get('address', 'n/a')}:{host.get('port', '—')}"
+            remark = host.get("remark", "n/a")
+            tag = host.get("tag", "—")
+            
+            line = _(
+                "host.list_item"
+            ).format(
+                statusEmoji=status_emoji,
+                remark=remark,
+                address=address,
+                tag=tag,
+            )
+            lines.append(line)
+            
+            # Добавляем кнопку для редактирования хоста
+            rows.append([InlineKeyboardButton(
+                text=f"{status_emoji} {remark}",
+                callback_data=f"host_edit:{host.get('uuid', '')}"
+            )])
+        
+        if len(hosts) > 20:
+            lines.append(_("host.list_more").format(count=len(hosts) - 20))
+        
+        # Добавляем только кнопку "Назад" к списку хостов
+        rows.append(nav_row(NavTarget.HOSTS_MENU))
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+        return "\n".join(lines), keyboard
+    except UnauthorizedError:
+        return _("errors.unauthorized"), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.HOSTS_MENU)])
+    except ApiClientError:
+        logger.exception("⚠️ Hosts fetch failed")
+        return _("errors.generic"), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.HOSTS_MENU)])
+
+
 
 
 async def _fetch_tokens_text() -> str:

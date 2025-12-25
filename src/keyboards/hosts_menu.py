@@ -8,7 +8,9 @@ def hosts_menu_keyboard() -> InlineKeyboardMarkup:
     """Клавиатура для меню хостов."""
     return InlineKeyboardMarkup(
         inline_keyboard=[
+            [InlineKeyboardButton(text=_("host.list"), callback_data="hosts:list")],
             [InlineKeyboardButton(text=_("host.create"), callback_data="hosts:create")],
+            [InlineKeyboardButton(text=_("host.update"), callback_data="hosts:update")],
             nav_row(NavTarget.NODES_MENU),
         ]
     )
