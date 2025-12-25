@@ -469,6 +469,8 @@ class RemnawaveApiClient:
         remark: str,
         address: str,
         port: int,
+        config_profile_uuid: str,
+        config_profile_inbound_uuid: str,
         tag: str | None = None,
     ) -> dict:
         """Создание нового хоста."""
@@ -476,6 +478,10 @@ class RemnawaveApiClient:
             "remark": remark,
             "address": address,
             "port": port,
+            "inbound": {
+                "configProfileUuid": config_profile_uuid,
+                "configProfileInboundUuid": config_profile_inbound_uuid,
+            },
         }
         if tag:
             payload["tag"] = tag

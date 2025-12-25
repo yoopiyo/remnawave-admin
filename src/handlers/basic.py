@@ -905,6 +905,85 @@ async def cb_hosts_create(callback: CallbackQuery) -> None:
     )
 
 
+@router.callback_query(F.data.startswith("hosts:select_profile:"))
+async def cb_hosts_select_profile(callback: CallbackQuery) -> None:
+    """Обработчик выбора профиля конфигурации для хоста."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    user_id = callback.from_user.id
+    ctx = PENDING_INPUT.get(user_id)
+    if not ctx or ctx.get("action") != "host_create":
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+        return
+    
+    profile_uuid = callback.data.split(":")[-1]
+    data = ctx.setdefault("data", {})
+    data["config_profile_uuid"] = profile_uuid
+    ctx["stage"] = "inbound"
+    PENDING_INPUT[user_id] = ctx
+    
+    # Загружаем инбаунды профиля
+    try:
+        profile_data = await api_client.get_config_profile_computed(profile_uuid)
+        profile_info = profile_data.get("response", profile_data)
+        inbounds = profile_info.get("inbounds", [])
+        if not inbounds:
+            await callback.message.edit_text(
+                _("host.no_inbounds"),
+                reply_markup=input_keyboard("host_create")
+            )
+            PENDING_INPUT[user_id] = ctx
+            return
+        keyboard = _host_inbounds_keyboard(inbounds)
+        await callback.message.edit_text(
+            _("host.prompt_inbound"),
+            reply_markup=keyboard
+        )
+    except Exception:
+        logger.exception("❌ Failed to load inbounds for host creation")
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+        PENDING_INPUT.pop(user_id, None)
+
+
+@router.callback_query(F.data.startswith("hosts:select_inbound:"))
+async def cb_hosts_select_inbound(callback: CallbackQuery) -> None:
+    """Обработчик выбора инбаунда для хоста."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    user_id = callback.from_user.id
+    ctx = PENDING_INPUT.get(user_id)
+    if not ctx or ctx.get("action") != "host_create":
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+        return
+    
+    inbound_uuid = callback.data.split(":")[-1]
+    data = ctx.setdefault("data", {})
+    data["config_profile_inbound_uuid"] = inbound_uuid
+    
+    # Создаем хост
+    try:
+        await api_client.create_host(
+            remark=data["remark"],
+            address=data["address"],
+            port=data["port"],
+            config_profile_uuid=data["config_profile_uuid"],
+            config_profile_inbound_uuid=data["config_profile_inbound_uuid"],
+            tag=data.get("tag"),
+        )
+        PENDING_INPUT.pop(user_id, None)
+        hosts_text = await _fetch_hosts_text()
+        await callback.message.edit_text(hosts_text, reply_markup=hosts_menu_keyboard())
+    except UnauthorizedError:
+        PENDING_INPUT.pop(user_id, None)
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+    except ApiClientError:
+        PENDING_INPUT.pop(user_id, None)
+        logger.exception("❌ Host creation failed")
+        await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+
+
 @router.callback_query(F.data == "menu:subs")
 async def cb_subs(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
@@ -1269,24 +1348,28 @@ async def cb_input_skip(callback: CallbackQuery) -> None:
         # Обработка пропуска шагов при создании хоста
         if stage == "tag":
             data["tag"] = None
-            # Создаем хост
+            ctx["stage"] = "config_profile"
+            PENDING_INPUT[user_id] = ctx
+            # Показываем список профилей конфигурации для выбора
             try:
-                await api_client.create_host(
-                    remark=data["remark"],
-                    address=data["address"],
-                    port=data["port"],
-                    tag=None,
+                profiles_data = await api_client.get_config_profiles()
+                profiles = profiles_data.get("response", {}).get("configProfiles", [])
+                if not profiles:
+                    await callback.message.edit_text(
+                        _("host.no_config_profiles"),
+                        reply_markup=input_keyboard(action)
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+                keyboard = _host_config_profiles_keyboard(profiles)
+                await callback.message.edit_text(
+                    _("host.prompt_config_profile"),
+                    reply_markup=keyboard
                 )
-                PENDING_INPUT.pop(user_id, None)
-                hosts_text = await _fetch_hosts_text()
-                await callback.message.edit_text(hosts_text, reply_markup=hosts_menu_keyboard())
-            except UnauthorizedError:
-                PENDING_INPUT.pop(user_id, None)
-                await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
-            except ApiClientError:
-                PENDING_INPUT.pop(user_id, None)
-                logger.exception("❌ Host creation failed")
+            except Exception:
+                logger.exception("❌ Failed to load config profiles for host creation")
                 await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+                PENDING_INPUT.pop(user_id, None)
     elif len(parts) >= 4 and parts[0] == "nef" and parts[1] == "skip":
         # nef:skip:{node_uuid}:{field}
         node_uuid = parts[2]
@@ -3421,25 +3504,30 @@ async def _handle_host_create_input(message: Message, ctx: dict) -> None:
         
         elif stage == "tag":
             data["tag"] = text if text else None
-            
-            # Создаем хост
+            ctx["stage"] = "config_profile"
+            PENDING_INPUT[user_id] = ctx
+            # Показываем список профилей конфигурации для выбора
             try:
-                await api_client.create_host(
-                    remark=data["remark"],
-                    address=data["address"],
-                    port=data["port"],
-                    tag=data.get("tag"),
+                profiles_data = await api_client.get_config_profiles()
+                profiles = profiles_data.get("response", {}).get("configProfiles", [])
+                if not profiles:
+                    await _send_clean_message(
+                        message,
+                        _("host.no_config_profiles"),
+                        reply_markup=input_keyboard(action)
+                    )
+                    PENDING_INPUT[user_id] = ctx
+                    return
+                keyboard = _host_config_profiles_keyboard(profiles)
+                await _send_clean_message(
+                    message,
+                    _("host.prompt_config_profile"),
+                    reply_markup=keyboard
                 )
-                PENDING_INPUT.pop(user_id, None)
-                hosts_text = await _fetch_hosts_text()
-                await _send_clean_message(message, hosts_text, reply_markup=hosts_menu_keyboard())
-            except UnauthorizedError:
-                PENDING_INPUT.pop(user_id, None)
-                await _send_clean_message(message, _("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
-            except ApiClientError:
-                PENDING_INPUT.pop(user_id, None)
-                logger.exception("❌ Host creation failed")
+            except Exception:
+                logger.exception("❌ Failed to load config profiles for host creation")
                 await _send_clean_message(message, _("errors.generic"), reply_markup=hosts_menu_keyboard())
+                PENDING_INPUT.pop(user_id, None)
             return
     
     except Exception as e:
@@ -3599,6 +3687,28 @@ def _node_providers_keyboard(providers: list[dict]) -> InlineKeyboardMarkup:
         rows.append([InlineKeyboardButton(text=name, callback_data=f"nodes:select_provider:{uuid}")])
     rows.append([InlineKeyboardButton(text=_("actions.skip_step"), callback_data="nodes:select_provider:none")])
     rows.append(nav_row(NavTarget.NODES_LIST))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _host_config_profiles_keyboard(profiles: list[dict]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора профиля конфигурации при создании хоста."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for profile in sorted(profiles, key=lambda p: p.get("viewPosition", 0))[:10]:
+        name = profile.get("name", "n/a")
+        uuid = profile.get("uuid", "")
+        rows.append([InlineKeyboardButton(text=name, callback_data=f"hosts:select_profile:{uuid}")])
+    rows.append(nav_row(NavTarget.HOSTS_MENU))
+    return InlineKeyboardMarkup(inline_keyboard=rows)
+
+
+def _host_inbounds_keyboard(inbounds: list[dict]) -> InlineKeyboardMarkup:
+    """Клавиатура для выбора инбаунда при создании хоста."""
+    rows: list[list[InlineKeyboardButton]] = []
+    for inbound in inbounds[:20]:  # Ограничиваем до 20 для удобства
+        name = inbound.get("remark") or inbound.get("tag") or "n/a"
+        uuid = inbound.get("uuid", "")
+        rows.append([InlineKeyboardButton(text=name, callback_data=f"hosts:select_inbound:{uuid}")])
+    rows.append(nav_row(NavTarget.HOSTS_MENU))
     return InlineKeyboardMarkup(inline_keyboard=rows)
 
 

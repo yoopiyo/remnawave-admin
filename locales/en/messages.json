@@ -251,6 +251,10 @@
     "prompt_address": "🖥 Create Host\n\nName: {remark}\n\nEnter host address:",
     "prompt_port": "🖥 Create Host\n\nName: {remark}\nAddress: {address}\n\nEnter port (1-65535):",
     "prompt_tag": "🖥 Create Host\n\nName: {remark}\nAddress: {address}\nPort: {port}\n\nEnter tag or press \"Skip step\" button:",
+    "prompt_config_profile": "🖥 Create Host\n\nSelect config profile:",
+    "prompt_inbound": "🖥 Create Host\n\nSelect inbound:",
+    "no_config_profiles": "⚠️ No config profiles available.",
+    "no_inbounds": "⚠️ Selected config profile has no inbounds.",
     "created": "✅ Host created successfully!",
     "invalid_port": "⚠️ Port must be a number between 1 and 65535."
   },
