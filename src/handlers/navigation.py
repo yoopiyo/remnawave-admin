@@ -270,6 +270,60 @@ async def cb_back(callback: CallbackQuery) -> None:
     await _navigate(callback, NavTarget.MAIN_MENU)
 
 
+@router.callback_query(F.data == "menu:section:users")
+async def cb_section_users(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Пользователи' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.USERS_MENU)
+
+
+@router.callback_query(F.data == "menu:section:nodes")
+async def cb_section_nodes(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Ноды/Хосты/Профили' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.NODES_MENU)
+
+
+@router.callback_query(F.data == "menu:section:resources")
+async def cb_section_resources(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Ресурсы' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.RESOURCES_MENU)
+
+
+@router.callback_query(F.data == "menu:section:billing")
+async def cb_section_billing(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Биллинг' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.BILLING_OVERVIEW)
+
+
+@router.callback_query(F.data == "menu:section:bulk")
+async def cb_section_bulk(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Массовые операции' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.BULK_MENU)
+
+
+@router.callback_query(F.data == "menu:section:system")
+async def cb_section_system(callback: CallbackQuery) -> None:
+    """Обработчик кнопки 'Система' в главном меню."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    await _navigate(callback, NavTarget.SYSTEM_MENU)
+
+
 @router.callback_query(F.data.startswith("subs:page:"))
 async def cb_subs_page(callback: CallbackQuery) -> None:
     """Обработчик пагинации списка подписок."""
