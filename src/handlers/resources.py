@@ -7,9 +7,8 @@ from aiogram.utils.i18n import gettext as _
 
 from src.handlers.common import _edit_text_safe, _not_admin, _send_clean_message
 from src.handlers.state import PENDING_INPUT
-from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard
+from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard, resources_menu_keyboard
 from src.keyboards.navigation import NavTarget
-from src.keyboards.resources_menu import resources_menu_keyboard
 from src.keyboards.snippet_actions import snippet_actions_keyboard
 from src.keyboards.template_actions import template_actions_keyboard, template_list_keyboard, template_menu_keyboard
 from src.keyboards.token_actions import token_actions_keyboard
