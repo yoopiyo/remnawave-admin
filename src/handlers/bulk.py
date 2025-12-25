@@ -7,7 +7,8 @@ from aiogram.utils.i18n import gettext as _
 
 from src.handlers.common import _edit_text_safe, _not_admin, _send_clean_message
 from src.handlers.state import PENDING_INPUT, SEARCH_PAGE_SIZE
-from src.keyboards.bulk_menu import bulk_hosts_keyboard, bulk_users_keyboard
+from src.keyboards.bulk_hosts import bulk_hosts_keyboard
+from src.keyboards.bulk_users import bulk_users_keyboard
 from src.services.api_client import ApiClientError, UnauthorizedError, api_client
 from src.utils.logger import logger
 

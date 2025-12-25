@@ -5,9 +5,9 @@ from aiogram.utils.i18n import gettext as _
 
 from src.handlers.common import _edit_text_safe, _not_admin
 from src.handlers.state import PENDING_INPUT
+from src.keyboards.main_menu import system_menu_keyboard
 from src.keyboards.navigation import NavTarget, nav_row
 from src.keyboards.stats_menu import stats_menu_keyboard
-from src.keyboards.system_menu import system_menu_keyboard
 from src.keyboards.system_nodes import system_nodes_keyboard
 from src.services.api_client import ApiClientError, UnauthorizedError, api_client
 from src.utils.formatters import build_bandwidth_stats, format_bytes, format_uptime

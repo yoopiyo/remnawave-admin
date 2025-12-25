@@ -8,12 +8,10 @@ from src.handlers.common import _not_admin, _send_clean_message
 from src.handlers.state import PENDING_INPUT
 from src.keyboards.billing_menu import billing_menu_keyboard
 from src.keyboards.billing_nodes_menu import billing_nodes_menu_keyboard
-from src.keyboards.bulk_menu import bulk_menu_keyboard
 from src.keyboards.hosts_menu import hosts_menu_keyboard
-from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard, resources_menu_keyboard
+from src.keyboards.main_menu import bulk_menu_keyboard, main_menu_keyboard, nodes_menu_keyboard, resources_menu_keyboard, system_menu_keyboard
 from src.keyboards.providers_menu import providers_menu_keyboard
 from src.keyboards.stats_menu import stats_menu_keyboard
-from src.keyboards.system_menu import system_menu_keyboard
 
 # Импорты из соответствующих модулей
 from src.handlers.billing import _fetch_billing_nodes_text, _fetch_billing_text, _fetch_providers_text
