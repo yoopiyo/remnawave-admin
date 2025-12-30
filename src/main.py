@@ -54,11 +54,23 @@ async def check_api_connection() -> bool:
 
 async def main() -> None:
     settings = get_settings()
+    
+    # Логируем загруженных администраторов для отладки
+    logger.info(
+        "🔐 Loaded admin configuration: admins=%s allowed_admins=%s",
+        settings.admins,
+        settings.allowed_admins,
+    )
+    if not settings.allowed_admins:
+        logger.warning(
+            "⚠️ WARNING: No administrators configured! "
+            "Set ADMINS environment variable with comma-separated user IDs (e.g., ADMINS=123456789,987654321)"
+        )
 
     # Проверяем подключение к API перед стартом
     if not await check_api_connection():
         logger.error(
-            "🚨 Cannot start bot: API is unavailable. "
+            "🚨 Cannot start bot: API is unavailable. " 
             "Please check API_BASE_URL and API_TOKEN in your .env file. "
             "Make sure the API server is running and accessible."
         )

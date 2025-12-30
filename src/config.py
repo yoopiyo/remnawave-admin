@@ -32,12 +32,28 @@ class Settings(BaseSettings):
     @field_validator("admins", mode="before")
     @classmethod
     def parse_admins(cls, value):
+        """Парсит список администраторов из строки или списка."""
         if value is None or value == "":
             return []
         if isinstance(value, str):
-            return [int(x) for x in value.split(",") if x.strip().isdigit()]
+            # Разделяем по запятой и убираем пробелы
+            parts = [x.strip() for x in value.split(",")]
+            # Фильтруем только цифры и конвертируем в int
+            # Используем try/except для более надежной обработки
+            admins = []
+            for part in parts:
+                if not part:  # Пропускаем пустые строки
+                    continue
+                try:
+                    admin_id = int(part)
+                    if admin_id > 0:  # Telegram user IDs всегда положительные
+                        admins.append(admin_id)
+                except ValueError:
+                    # Игнорируем нечисловые значения
+                    continue
+            return admins
         if isinstance(value, list):
-            return [int(x) for x in value]
+            return [int(x) for x in value if isinstance(x, (int, str)) and str(x).isdigit()]
         return []
 
 
