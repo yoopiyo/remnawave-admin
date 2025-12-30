@@ -6,6 +6,7 @@ from aiogram.fsm.storage.memory import MemoryStorage
 
 from src.config import get_settings
 from src.services.api_client import api_client
+from src.utils.auth import AdminMiddleware
 from src.utils.i18n import get_i18n_middleware
 from src.utils.logger import logger
 from src.handlers import register_handlers
@@ -68,6 +69,10 @@ async def main() -> None:
     dp = Dispatcher(storage=MemoryStorage())
 
     # middlewares
+    # Сначала проверка администратора (блокирует неавторизованных пользователей)
+    dp.message.middleware(AdminMiddleware())
+    dp.callback_query.middleware(AdminMiddleware())
+    # Затем i18n middleware (для локализации)
     dp.message.middleware(get_i18n_middleware())
     dp.callback_query.middleware(get_i18n_middleware())
 
