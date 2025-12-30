@@ -53,6 +53,11 @@ async def check_api_connection() -> bool:
 
 
 async def main() -> None:
+    import os
+    # Логируем сырое значение переменной окружения для отладки
+    raw_admins_env = os.getenv("ADMINS", "NOT_SET")
+    logger.info("🔍 DEBUG: Raw ADMINS env var: %s", repr(raw_admins_env))
+    
     settings = get_settings()
     
     # Логируем загруженных администраторов для отладки

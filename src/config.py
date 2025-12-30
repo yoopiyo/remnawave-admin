@@ -1,3 +1,4 @@
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import List
@@ -33,11 +34,17 @@ class Settings(BaseSettings):
     @classmethod
     def parse_admins(cls, value):
         """Парсит список администраторов из строки или списка."""
+        # Логируем для отладки (используем print, так как logger может быть еще не инициализирован)
+        raw_env_value = os.getenv("ADMINS", "NOT_SET")
+        print(f"DEBUG parse_admins: raw_env_value={repr(raw_env_value)}, value={repr(value)}, type={type(value)}")
+        
         if value is None or value == "":
+            print("DEBUG parse_admins: value is None or empty, returning []")
             return []
         if isinstance(value, str):
             # Разделяем по запятой и убираем пробелы
             parts = [x.strip() for x in value.split(",")]
+            print(f"DEBUG parse_admins: parts after split={parts}")
             # Фильтруем только цифры и конвертируем в int
             # Используем try/except для более надежной обработки
             admins = []
@@ -50,10 +57,15 @@ class Settings(BaseSettings):
                         admins.append(admin_id)
                 except ValueError:
                     # Игнорируем нечисловые значения
+                    print(f"DEBUG parse_admins: failed to parse part={repr(part)}")
                     continue
+            print(f"DEBUG parse_admins: final admins={admins}")
             return admins
         if isinstance(value, list):
-            return [int(x) for x in value if isinstance(x, (int, str)) and str(x).isdigit()]
+            result = [int(x) for x in value if isinstance(x, (int, str)) and str(x).isdigit()]
+            print(f"DEBUG parse_admins: value is list, result={result}")
+            return result
+        print(f"DEBUG parse_admins: value type not handled, returning []")
         return []
 
 
