@@ -885,6 +885,8 @@ async def _send_squad_prompt(target: Message | CallbackQuery, ctx: dict) -> None
 async def _show_squad_selection_for_edit(callback: CallbackQuery, user_uuid: str, back_to: str) -> None:
     """Показывает список сквадов для выбора при редактировании пользователя."""
     squads: list[dict] = []
+    squad_type = "internal"  # По умолчанию внутренние сквады
+    
     try:
         res = await api_client.get_internal_squads()
         squads = res.get("response", {}).get("internalSquads", [])
@@ -901,6 +903,7 @@ async def _show_squad_selection_for_edit(callback: CallbackQuery, user_uuid: str
         try:
             res = await api_client.get_external_squads()
             squads = res.get("response", {}).get("externalSquads", [])
+            squad_type = "external"
             logger.info("📥 Loaded %s external squads for edit user_id=%s", len(squads), callback.from_user.id)
         except UnauthorizedError:
             await callback.message.edit_text(_("errors.unauthorized"), reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
@@ -918,6 +921,15 @@ async def _show_squad_selection_for_edit(callback: CallbackQuery, user_uuid: str
         return
 
     squads_sorted = sorted(squads, key=lambda s: s.get("viewPosition", 0))
+    # Сохраняем список сквадов в контексте для получения UUID по индексу
+    user_id = callback.from_user.id
+    PENDING_INPUT[user_id] = {
+        "action": "user_edit_squad",
+        "user_uuid": user_uuid,
+        "squads": squads_sorted,
+        "squad_type": squad_type,
+        "back_to": back_to,
+    }
     markup = user_edit_squad_keyboard(squads_sorted, user_uuid, back_to=back_to)
     text = _("user.edit_prompt_squad") if squads_sorted else _("user.squad_load_failed")
     await callback.message.edit_text(text, reply_markup=markup)
@@ -1017,6 +1029,36 @@ async def cb_user_actions(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
 
+@router.callback_query(F.data.startswith("user_actions:"))
+async def cb_user_actions_menu(callback: CallbackQuery) -> None:
+    """Обработчик для возврата к меню действий пользователя."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        user = await api_client.get_user_by_uuid(user_uuid)
+        summary = build_user_summary(user, _)
+        status = user.get("response", user).get("status", "UNKNOWN")
+        await callback.message.edit_text(
+            summary, reply_markup=user_actions_keyboard(user_uuid, status, back_to=back_to), parse_mode="HTML"
+        )
+        _store_user_detail_back_target(callback.from_user.id, back_to)
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get user actions menu user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
 @router.callback_query(F.data.startswith("user_edit:"))
 async def cb_user_edit_menu(callback: CallbackQuery) -> None:
     """Обработчик входа в меню редактирования пользователя."""
@@ -1092,6 +1134,44 @@ async def cb_user_edit_field(callback: CallbackQuery) -> None:
 
     if field == "squad" and not value:
         # Показываем список сквадов для выбора
+        await _show_squad_selection_for_edit(callback, user_uuid, back_to)
+        return
+    
+    if field == "squad" and value:
+        # Обработка выбора сквада
+        user_id = callback.from_user.id
+        ctx = PENDING_INPUT.get(user_id, {})
+        
+        if ctx.get("action") == "user_edit_squad" and ctx.get("user_uuid") == user_uuid:
+            squads = ctx.get("squads", [])
+            back_to_ctx = ctx.get("back_to", back_to)
+            
+            if value == "remove":
+                # Удаление сквада
+                await _apply_user_update(callback, user_uuid, {"activeInternalSquads": []}, back_to=back_to_ctx)
+                PENDING_INPUT.pop(user_id, None)
+                return
+            else:
+                # Выбор сквада по индексу
+                try:
+                    squad_idx = int(value)
+                    if 0 <= squad_idx < len(squads):
+                        squad = squads[squad_idx]
+                        squad_uuid = squad.get("uuid")
+                        squad_type = ctx.get("squad_type", "internal")
+                        
+                        if squad_type == "external":
+                            update_data = {"externalSquadUuid": squad_uuid, "activeInternalSquads": []}
+                        else:
+                            update_data = {"activeInternalSquads": [squad_uuid], "externalSquadUuid": None}
+                        
+                        await _apply_user_update(callback, user_uuid, update_data, back_to=back_to_ctx)
+                        PENDING_INPUT.pop(user_id, None)
+                        return
+                except (ValueError, IndexError):
+                    logger.warning("Invalid squad index: %s", value)
+        
+        # Если контекст не найден или индекс невалидный, показываем меню заново
         await _show_squad_selection_for_edit(callback, user_uuid, back_to)
         return
 
@@ -1345,6 +1425,74 @@ async def cb_user_happ_link(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 
+@router.callback_query(F.data.startswith("user_traffic_nodes:"))
+async def cb_user_traffic_nodes(callback: CallbackQuery) -> None:
+    """Обработчик для быстрого доступа к статистике трафика по нодам."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        # Получаем информацию о пользователе
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        username = user_info.get("username", "n/a")
+        
+        from datetime import datetime, timedelta
+        
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [
+                    InlineKeyboardButton(
+                        text=_("user.stats.period_today"),
+                        callback_data=f"user_stats:traffic_period:{user_uuid}:today",
+                    ),
+                    InlineKeyboardButton(
+                        text=_("user.stats.period_week"),
+                        callback_data=f"user_stats:traffic_period:{user_uuid}:week",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_("user.stats.period_month"),
+                        callback_data=f"user_stats:traffic_period:{user_uuid}:month",
+                    ),
+                    InlineKeyboardButton(
+                        text=_("user.stats.period_3months"),
+                        callback_data=f"user_stats:traffic_period:{user_uuid}:3months",
+                    ),
+                ],
+                [
+                    InlineKeyboardButton(
+                        text=_("user.stats.period_year"),
+                        callback_data=f"user_stats:traffic_period:{user_uuid}:year",
+                    ),
+                ],
+                [InlineKeyboardButton(text=_("user.back_to_actions"), callback_data=f"user_actions:{user_uuid}")],
+                nav_row(back_to),
+            ]
+        )
+        text = _("user.traffic_by_nodes_title").format(username=_esc(username))
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get user traffic nodes menu user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
 @router.callback_query(F.data.startswith("user_stats:"))
 async def cb_user_stats(callback: CallbackQuery) -> None:
     """Обработчик статистики пользователя."""
@@ -1548,6 +1696,12 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
             end = now.isoformat() + "Z"
         elif period == "month":
             start = (today_start - timedelta(days=30)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "3months":
+            start = (today_start - timedelta(days=90)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "year":
+            start = (today_start - timedelta(days=365)).isoformat() + "Z"
             end = now.isoformat() + "Z"
         elif period == "custom":
             # Для произвольного периода нужно будет добавить ввод дат

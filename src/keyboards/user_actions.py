@@ -24,6 +24,9 @@ def user_actions_keyboard(user_uuid: str, status: str, back_to: str = NavTarget.
                 InlineKeyboardButton(text=_("user.stats"), callback_data=f"user_stats:{user_uuid}"),
             ],
             [
+                InlineKeyboardButton(text=_("user.traffic_by_nodes"), callback_data=f"user_traffic_nodes:{user_uuid}"),
+            ],
+            [
                 InlineKeyboardButton(text=_("user.hwid_devices"), callback_data=f"user_hwid:{user_uuid}"),
             ],
             nav_row(back_to),
@@ -59,7 +62,8 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
 
 
 def user_edit_squad_keyboard(squads: list[dict], user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> InlineKeyboardMarkup:
-    rows = [[InlineKeyboardButton(text=s.get("name", "n/a"), callback_data=f"uef:squad:{s.get('uuid')}:{user_uuid}")] for s in squads]
+    # Используем индекс вместо UUID, чтобы callback_data не превышал 64 байта
+    rows = [[InlineKeyboardButton(text=s.get("name", "n/a"), callback_data=f"uef:squad:{idx}:{user_uuid}")] for idx, s in enumerate(squads)]
     rows.append([InlineKeyboardButton(text=_("user.remove_squad"), callback_data=f"uef:squad:remove:{user_uuid}")])
     rows.append(nav_row(back_to))
     return InlineKeyboardMarkup(inline_keyboard=rows)
