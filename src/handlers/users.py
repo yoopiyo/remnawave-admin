@@ -1449,32 +1449,40 @@ async def cb_user_traffic_nodes(callback: CallbackQuery) -> None:
         now = datetime.utcnow()
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
+        # Сохраняем user_uuid в контексте, чтобы использовать короткий callback_data
+        user_id = callback.from_user.id
+        PENDING_INPUT[user_id] = {
+            "action": "user_traffic_nodes",
+            "user_uuid": user_uuid,
+            "back_to": back_to,
+        }
+        
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [
                     InlineKeyboardButton(
                         text=_("user.stats.period_today"),
-                        callback_data=f"user_stats:traffic_period:{user_uuid}:today",
+                        callback_data=f"utn:today",
                     ),
                     InlineKeyboardButton(
                         text=_("user.stats.period_week"),
-                        callback_data=f"user_stats:traffic_period:{user_uuid}:week",
+                        callback_data=f"utn:week",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
                         text=_("user.stats.period_month"),
-                        callback_data=f"user_stats:traffic_period:{user_uuid}:month",
+                        callback_data=f"utn:month",
                     ),
                     InlineKeyboardButton(
                         text=_("user.stats.period_3months"),
-                        callback_data=f"user_stats:traffic_period:{user_uuid}:3months",
+                        callback_data=f"utn:3months",
                     ),
                 ],
                 [
                     InlineKeyboardButton(
                         text=_("user.stats.period_year"),
-                        callback_data=f"user_stats:traffic_period:{user_uuid}:year",
+                        callback_data=f"utn:year",
                     ),
                 ],
                 [InlineKeyboardButton(text=_("user.back_to_actions"), callback_data=f"user_actions:{user_uuid}")],
@@ -1665,6 +1673,108 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
     except ApiClientError:
         logger.exception("Failed to get user stats user_uuid=%s action=%s actor_id=%s", user_uuid, action, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("utn:"))
+async def cb_user_traffic_nodes_period(callback: CallbackQuery) -> None:
+    """Обработчик выбора периода для статистики трафика по нодам (быстрый доступ)."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    period = parts[1]
+    user_id = callback.from_user.id
+    ctx = PENDING_INPUT.get(user_id, {})
+    
+    if ctx.get("action") != "user_traffic_nodes":
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+        return
+    
+    user_uuid = ctx.get("user_uuid")
+    back_to = ctx.get("back_to", NavTarget.USERS_MENU)
+    
+    if not user_uuid:
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+        return
+    
+    try:
+        from datetime import datetime, timedelta
+        
+        now = datetime.utcnow()
+        today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
+        
+        if period == "today":
+            start = today_start.isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "week":
+            start = (today_start - timedelta(days=7)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "month":
+            start = (today_start - timedelta(days=30)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "3months":
+            start = (today_start - timedelta(days=90)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        elif period == "year":
+            start = (today_start - timedelta(days=365)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
+        else:
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+            return
+        
+        # Получаем статистику трафика
+        traffic_data = await api_client.get_user_traffic_stats(user_uuid, start, end)
+        response = traffic_data.get("response", {})
+        total_traffic = response.get("totalTrafficBytes", 0)
+        nodes_usage = response.get("nodesUsage", [])
+        
+        lines = [
+            _("user.stats.traffic_title"),
+            "",
+            _("user.stats.traffic_period").format(
+                start=format_datetime(start.replace("Z", "+00:00")),
+                end=format_datetime(end.replace("Z", "+00:00")),
+            ),
+            _("user.stats.traffic_total").format(total=format_bytes(total_traffic)),
+        ]
+        
+        if nodes_usage:
+            lines.append("")
+            lines.append(_("user.stats.traffic_by_node"))
+            for node in nodes_usage:
+                node_name = node.get("nodeName", "n/a")
+                country = node.get("countryCode", "—")
+                traffic_bytes = node.get("trafficBytes", 0)
+                lines.append(
+                    _("user.stats.traffic_node_item").format(
+                        nodeName=_esc(node_name), country=country, traffic=format_bytes(traffic_bytes)
+                    )
+                )
+        
+        text = "\n".join(lines)
+        keyboard = InlineKeyboardMarkup(
+            inline_keyboard=[
+                [InlineKeyboardButton(text=_("user.back_to_actions"), callback_data=f"user_actions:{user_uuid}")],
+                nav_row(back_to),
+            ]
+        )
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
+        # Очищаем контекст после использования
+        PENDING_INPUT.pop(user_id, None)
+        
+    except UnauthorizedError:
+        PENDING_INPUT.pop(user_id, None)
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        PENDING_INPUT.pop(user_id, None)
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        PENDING_INPUT.pop(user_id, None)
+        logger.exception("Failed to get user traffic stats user_uuid=%s period=%s actor_id=%s", user_uuid, period, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 
