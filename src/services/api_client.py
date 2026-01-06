@@ -543,6 +543,30 @@ class RemnawaveApiClient:
         """Получает статистику по устройствам (HWID)."""
         return await self._get("/api/hwid/devices/stats")
 
+    async def get_all_hwid_devices(self, start: int = 0, size: int = 100) -> dict:
+        """Получает все HWID устройства всех пользователей."""
+        return await self._get(f"/api/hwid/devices?start={start}&size={size}")
+
+    async def get_user_hwid_devices(self, user_uuid: str) -> dict:
+        """Получает HWID устройства конкретного пользователя."""
+        return await self._get(f"/api/hwid/devices/{user_uuid}")
+
+    async def create_user_hwid_device(self, user_uuid: str, hwid: str) -> dict:
+        """Создает HWID устройство для пользователя."""
+        return await self._post("/api/hwid/devices", json={"userUuid": user_uuid, "hwid": hwid})
+
+    async def delete_user_hwid_device(self, user_uuid: str, hwid: str) -> dict:
+        """Удаляет конкретное HWID устройство пользователя."""
+        return await self._post("/api/hwid/devices/delete", json={"userUuid": user_uuid, "hwid": hwid})
+
+    async def delete_all_user_hwid_devices(self, user_uuid: str) -> dict:
+        """Удаляет все HWID устройства пользователя."""
+        return await self._post("/api/hwid/devices/delete-all", json={"userUuid": user_uuid})
+
+    async def get_top_users_by_hwid_devices(self, limit: int = 10) -> dict:
+        """Получает топ пользователей по количеству HWID устройств."""
+        return await self._get(f"/api/hwid/devices/top-users?limit={limit}")
+
     # --- API Tokens ---
     async def get_tokens(self) -> dict:
         return await self._get("/api/tokens")

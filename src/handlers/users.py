@@ -31,6 +31,7 @@ from src.keyboards.user_create import (
     user_create_traffic_keyboard,
 )
 from src.keyboards.user_stats import user_stats_keyboard
+from src.keyboards.hwid_devices import hwid_devices_keyboard
 from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError, api_client
 from src.utils.formatters import (
     _esc,
@@ -1565,7 +1566,7 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
             return
 
         # Получаем статистику трафика
-        traffic_data = await api_client.get_user_usage_by_range(user_uuid, start, end)
+        traffic_data = await api_client.get_user_traffic_stats(user_uuid, start, end)
         response = traffic_data.get("response", {})
         total_traffic = response.get("totalTrafficBytes", 0)
         nodes_usage = response.get("nodesUsage", [])
@@ -1738,4 +1739,343 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
     except ApiClientError:
         logger.exception("Failed to get user nodes usage user_uuid=%s period=%s actor_id=%s", user_uuid, period, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("user_hwid:"))
+async def cb_user_hwid_devices(callback: CallbackQuery) -> None:
+    """Обработчик просмотра HWID устройств пользователя."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        # Получаем информацию о пользователе
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        username = user_info.get("username", "n/a")
+        hwid_limit = user_info.get("hwidDeviceLimit")
+        hwid_limit_display = _("hwid.unlimited") if not hwid_limit else str(hwid_limit)
+        
+        # Получаем устройства пользователя
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        lines = [
+            f"*{_('hwid.title')}*",
+            "",
+            _("hwid.user_info").format(
+                username=_esc(username),
+                limit=hwid_limit_display,
+                count=len(devices)
+            ),
+        ]
+        
+        if not devices:
+            lines.append("")
+            lines.append(_("hwid.no_devices"))
+        else:
+            lines.append("")
+            lines.append(f"*{_('hwid.devices_list')}*")
+            for idx, device in enumerate(devices[:10], 1):  # Показываем до 10 устройств
+                hwid = device.get("hwid", "n/a")
+                created_at = device.get("createdAt")
+                created_str = format_datetime(created_at) if created_at else "—"
+                lines.append(
+                    _("hwid.device_item").format(
+                        index=idx,
+                        hwid=hwid[:40] + "..." if len(hwid) > 40 else hwid,
+                        created=created_str
+                    )
+                )
+        
+        text = "\n".join(lines)
+        await callback.message.edit_text(
+            text,
+            reply_markup=hwid_devices_keyboard(user_uuid, devices, back_to=back_to),
+            parse_mode="Markdown"
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get user HWID devices user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("hwid_delete_idx:"))
+async def cb_hwid_delete(callback: CallbackQuery) -> None:
+    """Обработчик удаления конкретного HWID устройства по индексу."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 3:
+        return
+    
+    user_uuid = parts[1]
+    try:
+        device_idx = int(parts[2])
+    except ValueError:
+        await callback.answer(_("errors.generic"), show_alert=True)
+        return
+    
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        # Получаем список устройств, чтобы найти HWID по индексу
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        if device_idx < 0 or device_idx >= len(devices):
+            await callback.answer(_("hwid.device_not_found"), show_alert=True)
+            return
+        
+        hwid = devices[device_idx].get("hwid")
+        if not hwid:
+            await callback.answer(_("errors.generic"), show_alert=True)
+            return
+        
+        await api_client.delete_user_hwid_device(user_uuid, hwid)
+        await callback.answer(_("hwid.deleted"), show_alert=True)
+        # Обновляем список устройств - вызываем функцию напрямую
+        # Получаем информацию о пользователе
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        username = user_info.get("username", "n/a")
+        hwid_limit = user_info.get("hwidDeviceLimit")
+        hwid_limit_display = _("hwid.unlimited") if not hwid_limit else str(hwid_limit)
+        
+        # Получаем обновленный список устройств
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        lines = [
+            f"*{_('hwid.title')}*",
+            "",
+            _("hwid.user_info").format(
+                username=_esc(username),
+                limit=hwid_limit_display,
+                count=len(devices)
+            ),
+        ]
+        
+        if not devices:
+            lines.append("")
+            lines.append(_("hwid.no_devices"))
+        else:
+            lines.append("")
+            lines.append(f"*{_('hwid.devices_list')}*")
+            for idx, device in enumerate(devices[:10], 1):
+                device_hwid = device.get("hwid", "n/a")
+                created_at = device.get("createdAt")
+                created_str = format_datetime(created_at) if created_at else "—"
+                lines.append(
+                    _("hwid.device_item").format(
+                        index=idx,
+                        hwid=device_hwid[:40] + "..." if len(device_hwid) > 40 else device_hwid,
+                        created=created_str
+                    )
+                )
+        
+        text = "\n".join(lines)
+        await callback.message.edit_text(
+            text,
+            reply_markup=hwid_devices_keyboard(user_uuid, devices, back_to=back_to),
+            parse_mode="Markdown"
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("hwid.device_not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to delete HWID device user_uuid=%s device_idx=%s actor_id=%s", user_uuid, device_idx, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("hwid_delete_all:"))
+async def cb_hwid_delete_all(callback: CallbackQuery) -> None:
+    """Обработчик удаления всех HWID устройств пользователя."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        await api_client.delete_all_user_hwid_devices(user_uuid)
+        await callback.answer(_("hwid.all_deleted"), show_alert=True)
+        # Обновляем список устройств - вызываем функцию напрямую
+        # Получаем информацию о пользователе
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        username = user_info.get("username", "n/a")
+        hwid_limit = user_info.get("hwidDeviceLimit")
+        hwid_limit_display = _("hwid.unlimited") if not hwid_limit else str(hwid_limit)
+        
+        # Получаем обновленный список устройств
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        lines = [
+            f"*{_('hwid.title')}*",
+            "",
+            _("hwid.user_info").format(
+                username=_esc(username),
+                limit=hwid_limit_display,
+                count=len(devices)
+            ),
+        ]
+        
+        if not devices:
+            lines.append("")
+            lines.append(_("hwid.no_devices"))
+        else:
+            lines.append("")
+            lines.append(f"*{_('hwid.devices_list')}*")
+            for idx, device in enumerate(devices[:10], 1):
+                device_hwid = device.get("hwid", "n/a")
+                created_at = device.get("createdAt")
+                created_str = format_datetime(created_at) if created_at else "—"
+                lines.append(
+                    _("hwid.device_item").format(
+                        index=idx,
+                        hwid=device_hwid[:40] + "..." if len(device_hwid) > 40 else device_hwid,
+                        created=created_str
+                    )
+                )
+        
+        text = "\n".join(lines)
+        await callback.message.edit_text(
+            text,
+            reply_markup=hwid_devices_keyboard(user_uuid, devices, back_to=back_to),
+            parse_mode="Markdown"
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to delete all HWID devices user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("hwid_add:"))
+async def cb_hwid_add(callback: CallbackQuery) -> None:
+    """Обработчик добавления HWID устройства - запрашивает ввод."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    # Сохраняем контекст для обработки ввода
+    user_id = callback.from_user.id
+    PENDING_INPUT[user_id] = {
+        "action": "hwid_add",
+        "user_uuid": user_uuid,
+        "back_to": back_to,
+    }
+    
+    await callback.message.edit_text(
+        _("hwid.prompt_add"),
+        reply_markup=nav_keyboard(back_to),
+        parse_mode="Markdown"
+    )
+
+
+@router.message(F.text & ~F.text.startswith("/"))
+async def handle_hwid_add_input(message: Message) -> None:
+    """Обработчик ввода HWID для добавления устройства."""
+    user_id = message.from_user.id
+    ctx = PENDING_INPUT.get(user_id)
+    
+    if not ctx or ctx.get("action") != "hwid_add":
+        return
+    
+    if await _not_admin(message):
+        return
+    
+    user_uuid = ctx.get("user_uuid")
+    back_to = ctx.get("back_to", NavTarget.USERS_MENU)
+    hwid = message.text.strip()
+    
+    if not hwid:
+        await _send_clean_message(message, _("hwid.invalid_hwid"), reply_markup=nav_keyboard(back_to))
+        return
+    
+    try:
+        await api_client.create_user_hwid_device(user_uuid, hwid)
+        # Очищаем контекст
+        PENDING_INPUT.pop(user_id, None)
+        
+        # Получаем обновленный список устройств
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        user = await api_client.get_user_by_uuid(user_uuid)
+        user_info = user.get("response", user)
+        username = user_info.get("username", "n/a")
+        hwid_limit = user_info.get("hwidDeviceLimit")
+        hwid_limit_display = _("hwid.unlimited") if not hwid_limit else str(hwid_limit)
+        
+        lines = [
+            f"*{_('hwid.title')}*",
+            "",
+            _("hwid.user_info").format(
+                username=_esc(username),
+                limit=hwid_limit_display,
+                count=len(devices)
+            ),
+        ]
+        
+        if not devices:
+            lines.append("")
+            lines.append(_("hwid.no_devices"))
+        else:
+            lines.append("")
+            lines.append(f"*{_('hwid.devices_list')}*")
+            for idx, device in enumerate(devices[:10], 1):
+                device_hwid = device.get("hwid", "n/a")
+                created_at = device.get("createdAt")
+                created_str = format_datetime(created_at) if created_at else "—"
+                lines.append(
+                    _("hwid.device_item").format(
+                        index=idx,
+                        hwid=device_hwid[:40] + "..." if len(device_hwid) > 40 else device_hwid,
+                        created=created_str
+                    )
+                )
+        
+        text = "\n".join(lines)
+        await _send_clean_message(
+            message,
+            text,
+            reply_markup=hwid_devices_keyboard(user_uuid, devices, back_to=back_to),
+            parse_mode="Markdown"
+        )
+    except UnauthorizedError:
+        PENDING_INPUT.pop(user_id, None)
+        await _send_clean_message(message, _("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        PENDING_INPUT.pop(user_id, None)
+        await _send_clean_message(message, _("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        PENDING_INPUT.pop(user_id, None)
+        logger.exception("Failed to add HWID device user_uuid=%s actor_id=%s", user_uuid, message.from_user.id)
+        await _send_clean_message(message, _("errors.generic"), reply_markup=nav_keyboard(back_to))
 
