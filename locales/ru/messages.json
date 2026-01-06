@@ -89,6 +89,9 @@
     "traffic_upload": "📤 Загружено: `{upload}`",
     "traffic_by_node": "По нодам:",
     "traffic_node_item": "  • *{nodeName}* ({country}): `{traffic}` (↓{download} ↑{upload})",
+    "period_today": "Сегодня",
+    "period_week": "Неделя",
+    "period_month": "Месяц",
     "period_3months": "3 месяца",
     "period_year": "Год"
   },

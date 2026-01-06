@@ -89,6 +89,9 @@
     "traffic_upload": "📤 Uploaded: `{upload}`",
     "traffic_by_node": "By nodes:",
     "traffic_node_item": "  • *{nodeName}* ({country}): `{traffic}` (↓{download} ↑{upload})",
+    "period_today": "Today",
+    "period_week": "Week",
+    "period_month": "Month",
     "period_3months": "3 months",
     "period_year": "Year"
   },

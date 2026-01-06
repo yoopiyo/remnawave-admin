@@ -320,7 +320,7 @@ async def cb_stats(callback: CallbackQuery) -> None:
     await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
 
 
-@router.callback_query(F.data.startswith("stats:"))
+@router.callback_query(F.data.in_(["stats:panel", "stats:server", "stats:traffic"]))
 async def cb_stats_type(callback: CallbackQuery) -> None:
     """Обработчик выбора типа статистики."""
     if await _not_admin(callback):
