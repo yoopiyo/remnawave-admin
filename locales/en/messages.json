@@ -216,7 +216,8 @@
       "deleted": "✅ Device deleted",
       "all_deleted": "✅ All devices deleted",
       "device_not_found": "⚠️ Device not found",
-      "unlimited": "Unlimited"
+      "unlimited": "Unlimited",
+      "click_to_delete": "💡 Click on a device to delete it"
     },
     "hwid.title": "💻 Device management (HWID)",
     "hwid.user_info": "👤 User: *{username}*\n📊 Limit: `{limit}`\n📱 Devices: `{count}`",
