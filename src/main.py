@@ -1,11 +1,14 @@
 import asyncio
 import sys
+from contextlib import asynccontextmanager
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+import uvicorn
 
 from src.config import get_settings
 from src.services.api_client import api_client
+from src.services.webhook import app as webhook_app
 from src.utils.auth import AdminMiddleware
 from src.utils.i18n import get_i18n_middleware
 from src.utils.logger import logger
@@ -50,6 +53,24 @@ async def check_api_connection() -> bool:
                 return False
     
     return False
+
+
+async def run_webhook_server(bot: Bot, port: int) -> None:
+    """Запускает webhook сервер в фоновом режиме."""
+    # Сохраняем бот в состоянии приложения для доступа из webhook handlers
+    webhook_app.state.bot = bot
+    
+    config = uvicorn.Config(
+        app=webhook_app,
+        host="0.0.0.0",
+        port=port,
+        log_level="info",
+        access_log=True,
+    )
+    server = uvicorn.Server(config)
+    
+    logger.info("🌐 Starting webhook server on port %d", port)
+    await server.serve()
 
 
 async def main() -> None:
@@ -115,8 +136,30 @@ async def main() -> None:
     register_handlers(dp)
     dp.shutdown.register(api_client.close)
 
-    logger.info("Starting bot")
-    await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    # Запускаем webhook сервер в фоне, если настроен порт
+    webhook_task = None
+    if settings.webhook_port:
+        logger.info(
+            "🌐 Webhook server will be started on port %d (WEBHOOK_SECRET=%s)",
+            settings.webhook_port,
+            "configured" if settings.webhook_secret else "not set (insecure!)"
+        )
+        webhook_task = asyncio.create_task(run_webhook_server(bot, settings.webhook_port))
+    else:
+        logger.info("🌐 Webhook server disabled (WEBHOOK_PORT not set)")
+
+    logger.info("🤖 Starting bot")
+    try:
+        await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
+    finally:
+        # Останавливаем webhook сервер при остановке бота
+        if webhook_task:
+            logger.info("🌐 Stopping webhook server")
+            webhook_task.cancel()
+            try:
+                await webhook_task
+            except asyncio.CancelledError:
+                pass
 
 
 if __name__ == "__main__":

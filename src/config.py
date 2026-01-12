@@ -20,6 +20,8 @@ class Settings(BaseSettings):
     log_level: str = Field("INFO", alias="LOG_LEVEL")
     notifications_chat_id: int | None = Field(default=None, alias="NOTIFICATIONS_CHAT_ID")
     notifications_topic_id: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_ID")
+    webhook_port: int = Field(default=8080, alias="WEBHOOK_PORT")
+    webhook_secret: str | None = Field(default=None, alias="WEBHOOK_SECRET")
 
     @field_validator("notifications_chat_id", mode="before")
     @classmethod
