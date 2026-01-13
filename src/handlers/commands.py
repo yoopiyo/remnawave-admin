@@ -68,15 +68,16 @@ async def handle_pending(message: Message) -> None:
         return
     user_id = message.from_user.id
     from src.utils.logger import logger
-    logger.debug(
+    in_pending = user_id in PENDING_INPUT
+    logger.info(
         "handle_pending: user_id=%s in_PENDING_INPUT=%s text='%s'",
-        user_id, user_id in PENDING_INPUT, message.text[:50] if message.text else None
+        user_id, in_pending, message.text[:50] if message.text else None
     )
-    if user_id not in PENDING_INPUT:
+    if not in_pending:
         # Если это не ожидаемый ввод, удаляем сообщение
         from src.handlers.common import _cleanup_message
         import asyncio
-        logger.debug("handle_pending: deleting message - not in PENDING_INPUT")
+        logger.info("handle_pending: deleting message - not in PENDING_INPUT")
         asyncio.create_task(_cleanup_message(message, delay=0.0))
         return
     
@@ -84,9 +85,10 @@ async def handle_pending(message: Message) -> None:
     # Это гарантирует, что сообщение не будет удалено до завершения обработки
     ctx = PENDING_INPUT.get(user_id)
     if not ctx:
+        logger.warning("handle_pending: user_id=%s in PENDING_INPUT but ctx is None", user_id)
         return
     action = ctx.get("action")
-    logger.debug("handle_pending: processing action=%s", action)
+    logger.info("handle_pending: processing action=%s", action)
     if action == "user_search":
         await _handle_user_search_input(message, ctx)
     elif action == "template_create":
