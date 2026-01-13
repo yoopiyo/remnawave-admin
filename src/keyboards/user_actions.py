@@ -34,7 +34,6 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
             ],
             [
                 InlineKeyboardButton(text=_("user.edit_expire"), callback_data=f"uef:expire::{user_uuid}"),
-                InlineKeyboardButton(text=_("user.edit_hwid"), callback_data=f"uef:hwid::{user_uuid}"),
             ],
             [
                 InlineKeyboardButton(text=_("user.edit_description"), callback_data=f"uef:description::{user_uuid}"),
@@ -52,7 +51,7 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
                 InlineKeyboardButton(text=_("user.traffic_by_nodes"), callback_data=f"user_traffic_nodes:{user_uuid}"),
             ],
             [
-                InlineKeyboardButton(text=_("user.hwid_devices"), callback_data=f"user_hwid:{user_uuid}"),
+                InlineKeyboardButton(text=_("user.hwid_management"), callback_data=f"user_hwid_menu:{user_uuid}"),
             ],
             nav_row(back_to),
         ]

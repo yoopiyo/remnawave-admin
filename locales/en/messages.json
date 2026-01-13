@@ -208,6 +208,7 @@
     "edit_prompt_squad": "👥 Select internal squad:",
     "remove_squad": "❌ Remove Squad",
     "hwid_devices": "💻 Devices (HWID)",
+    "hwid_management": "💻 HWID Management",
     "hwid": {
       "title": "💻 Device management (HWID)",
       "user_info": "👤 User: <b>{username}</b>\n📊 Limit: <code>{limit}</code>\n📱 Devices: <code>{count}</code>",

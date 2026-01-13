@@ -33,6 +33,7 @@ from src.keyboards.user_create import (
 )
 from src.keyboards.user_stats import user_stats_keyboard
 from src.keyboards.hwid_devices import hwid_devices_keyboard
+from src.keyboards.hwid_menu import hwid_management_keyboard
 from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError, api_client
 from src.utils.formatters import (
     _esc,
@@ -2072,6 +2073,51 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
     except ApiClientError:
         logger.exception("Failed to get user nodes usage user_uuid=%s period=%s actor_id=%s", user_uuid, period, callback.from_user.id)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("user_hwid_menu:"))
+async def cb_user_hwid_menu(callback: CallbackQuery) -> None:
+    """Обработчик меню управления HWID."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    user_uuid = parts[1]
+    back_to = _get_user_detail_back_target(callback.from_user.id)
+    
+    try:
+        user = await api_client.get_user_by_uuid(user_uuid)
+        info = user.get("response", user)
+        username = info.get("username", "n/a")
+        hwid_limit = info.get("hwidDeviceLimit")
+        hwid_limit_display = _("hwid.unlimited") if not hwid_limit else str(hwid_limit)
+        
+        # Получаем устройства пользователя
+        devices_data = await api_client.get_user_hwid_devices(user_uuid)
+        devices = devices_data.get("response", {}).get("devices", [])
+        
+        text = (
+            f"<b>{_('user.hwid_management')}</b>\n\n"
+            f"👤 <b>{_esc(username)}</b>\n"
+            f"📊 Лимит: <code>{_esc(hwid_limit_display)}</code>\n"
+            f"📱 Устройств: <code>{len(devices)}</code>"
+        )
+        
+        await callback.message.edit_text(
+            text,
+            reply_markup=hwid_management_keyboard(user_uuid, back_to=back_to),
+            parse_mode="HTML",
+        )
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get user HWID menu user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 

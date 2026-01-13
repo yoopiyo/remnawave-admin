@@ -50,7 +50,6 @@ async def _fetch_main_menu_text() -> str:
 
         total_users = users.get("totalUsers", 0)
         online_now = online.get("onlineNow", 0)
-        nodes_online = nodes.get("totalOnline", 0)
 
         # Получаем количество хостов
         try:
@@ -68,9 +67,12 @@ async def _fetch_main_menu_text() -> str:
             nodes_list = nodes_data.get("response", [])
             total_nodes = len(nodes_list)
             enabled_nodes = sum(1 for n in nodes_list if not n.get("isDisabled"))
+            # Правильно считаем онлайн ноды из списка нод, а не из статистики API
+            nodes_online = sum(1 for n in nodes_list if n.get("isConnected"))
         except Exception:
             total_nodes = "—"
             enabled_nodes = "—"
+            nodes_online = "—"
 
         lines = [
             _("bot.menu"),

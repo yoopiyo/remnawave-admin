@@ -208,6 +208,7 @@
     "edit_prompt_squad": "👥 Выберите внутренний сквад:",
     "remove_squad": "❌ Удалить сквад",
     "hwid_devices": "💻 Устройства (HWID)",
+    "hwid_management": "💻 Управление HWID",
     "hwid": {
       "title": "💻 Управление устройствами (HWID)",
       "user_info": "👤 Пользователь: <b>{username}</b>\n📊 Лимит: <code>{limit}</code>\n📱 Устройств: <code>{count}</code>",
