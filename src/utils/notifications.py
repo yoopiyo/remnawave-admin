@@ -9,6 +9,24 @@ from src.utils.formatters import format_bytes, format_datetime
 from src.utils.logger import logger
 
 
+async def _get_squad_name_by_uuid(squad_uuid: str) -> str:
+    """Получает имя сквада по UUID из API."""
+    try:
+        from src.services.api_client import api_client
+        squads_res = await api_client.get_internal_squads()
+        all_squads = squads_res.get("response", {}).get("internalSquads", [])
+        # Ищем сквад по UUID
+        for squad in all_squads:
+            if squad.get("uuid") == squad_uuid:
+                return squad.get("name", squad_uuid[:8] + "...")
+        # Если не нашли, возвращаем короткий UUID
+        return squad_uuid[:8] + "..."
+    except Exception as exc:
+        logger.debug("Failed to get squad name from API for uuid=%s: %s", squad_uuid, exc)
+        # Если не удалось получить из API, возвращаем короткий UUID
+        return squad_uuid[:8] + "..."
+
+
 async def send_user_notification(
     bot: Bot,
     action: str,  # "created", "updated", "deleted"
@@ -110,9 +128,14 @@ async def send_user_notification(
         
         squad_display = "—"
         if active_squads:
+            # Сначала проверяем, есть ли информация о сквадах в данных
             squad_info = info.get("internalSquads", [])
             if squad_info and isinstance(squad_info, list) and len(squad_info) > 0:
+                # Если есть информация о сквадах, используем имя
                 squad_display = squad_info[0].get("name", active_squads[0])
+            else:
+                # Если нет информации о сквадах, получаем имя из API
+                squad_display = await _get_squad_name_by_uuid(active_squads[0])
         elif external_squad:
             squad_display = f"External: {external_squad[:8]}..."
         
@@ -123,9 +146,14 @@ async def send_user_notification(
             
             old_squad_display = "—"
             if old_active_squads:
+                # Сначала проверяем, есть ли информация о сквадах в данных
                 old_squad_info = old_info.get("internalSquads", [])
                 if old_squad_info and isinstance(old_squad_info, list) and len(old_squad_info) > 0:
+                    # Если есть информация о сквадах, используем имя
                     old_squad_display = old_squad_info[0].get("name", old_active_squads[0])
+                else:
+                    # Если нет информации о сквадах, получаем имя из API
+                    old_squad_display = await _get_squad_name_by_uuid(old_active_squads[0])
             elif old_external_squad:
                 old_squad_display = f"External: {old_external_squad[:8]}..."
             

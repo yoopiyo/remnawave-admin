@@ -4,7 +4,7 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 
-from src.handlers.common import _edit_text_safe, _not_admin, _send_clean_message
+from src.handlers.common import _cleanup_message, _edit_text_safe, _not_admin, _send_clean_message
 from src.handlers.state import PENDING_INPUT
 from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard
 from src.keyboards.navigation import NavTarget, nav_keyboard, nav_row

@@ -20,15 +20,6 @@ def user_actions_keyboard(user_uuid: str, status: str, back_to: str = NavTarget.
             [
                 InlineKeyboardButton(text=_("user.edit"), callback_data=f"user_edit:{user_uuid}"),
             ],
-            [
-                InlineKeyboardButton(text=_("user.stats"), callback_data=f"user_stats:{user_uuid}"),
-            ],
-            [
-                InlineKeyboardButton(text=_("user.traffic_by_nodes"), callback_data=f"user_traffic_nodes:{user_uuid}"),
-            ],
-            [
-                InlineKeyboardButton(text=_("user.hwid_devices"), callback_data=f"user_hwid:{user_uuid}"),
-            ],
             nav_row(back_to),
         ]
     )
@@ -55,6 +46,13 @@ def user_edit_keyboard(user_uuid: str, back_to: str = NavTarget.USERS_MENU) -> I
             ],
             [
                 InlineKeyboardButton(text=_("user.edit_squad"), callback_data=f"uef:squad::{user_uuid}"),
+            ],
+            [
+                InlineKeyboardButton(text=_("user.stats"), callback_data=f"user_stats:{user_uuid}"),
+                InlineKeyboardButton(text=_("user.traffic_by_nodes"), callback_data=f"user_traffic_nodes:{user_uuid}"),
+            ],
+            [
+                InlineKeyboardButton(text=_("user.hwid_devices"), callback_data=f"user_hwid:{user_uuid}"),
             ],
             nav_row(back_to),
         ]

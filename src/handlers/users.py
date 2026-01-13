@@ -429,6 +429,10 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
     reply_markup = user_actions_keyboard(info.get("uuid", ""), status)
     await _respond(summary, reply_markup)
     
+    # Удаляем сообщение пользователя после создания (только для Message, не для CallbackQuery)
+    if isinstance(target, Message):
+        asyncio.create_task(_cleanup_message(target, delay=0.5))
+    
     # Отправляем уведомление о создании пользователя
     try:
         bot = target.bot if isinstance(target, Message) else target.message.bot
@@ -447,6 +451,9 @@ def _format_user_edit_snapshot(info: dict, t) -> str:
     telegram_id = info.get("telegramId") or t("user.not_set")
     email = info.get("email") or t("user.not_set")
     description = info.get("description") or t("user.not_set")
+    username = info.get("username", "n/a")
+    short_uuid = info.get("shortUuid", "n/a")
+    uuid = info.get("uuid", "n/a")
 
     # Получаем информацию о скваде
     active_squads = info.get("activeInternalSquads", [])
@@ -462,6 +469,11 @@ def _format_user_edit_snapshot(info: dict, t) -> str:
     return "\n".join(
         [
             t("user.edit_prompt"),
+            "",
+            f"👤 <code>{_esc(username)}</code>",
+            f"🔖 Short: <code>{_esc(short_uuid)}</code>",
+            f"🆔 UUID: <code>{_esc(uuid)}</code>",
+            "",
             t("user.current").format(value=""),
             f"• {t('user.edit_status_label')}: {info.get('status', 'UNKNOWN')}",
             f"• {t('user.edit_traffic_limit')}: {format_bytes(traffic_limit)}",
@@ -517,9 +529,11 @@ async def _apply_user_update(target: Message | CallbackQuery, user_uuid: str, pa
         text = _format_user_edit_snapshot(info, _)
         markup = user_edit_keyboard(user_uuid, back_to=back_to)
         if isinstance(target, CallbackQuery):
-            await target.message.edit_text(text, reply_markup=markup)
+            await target.message.edit_text(text, reply_markup=markup, parse_mode="HTML")
         else:
-            await _send_clean_message(target, text, reply_markup=markup)
+            await _send_clean_message(target, text, reply_markup=markup, parse_mode="HTML")
+            # Удаляем сообщение пользователя после обработки (только для Message, не для CallbackQuery)
+            asyncio.create_task(_cleanup_message(target, delay=0.5))
         
         # Отправляем уведомление об изменении пользователя
         try:
@@ -560,6 +574,7 @@ async def _handle_user_edit_input(message: Message, ctx: dict) -> None:
 
     if not user_uuid or not field:
         await _send_clean_message(message, _("errors.generic"), reply_markup=nav_keyboard(back_to))
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     def _set_retry(prompt_key: str) -> None:
@@ -571,6 +586,8 @@ async def _handle_user_edit_input(message: Message, ctx: dict) -> None:
                 reply_markup=user_edit_keyboard(user_uuid, back_to=back_to),
             )
         )
+        # Удаляем сообщение пользователя после обработки
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
 
     payload: dict[str, object | None] = {}
 
@@ -633,6 +650,7 @@ async def _handle_user_edit_input(message: Message, ctx: dict) -> None:
         payload["email"] = None if text in {"", "-"} else text
     else:
         await _send_clean_message(message, _("errors.generic"), reply_markup=user_edit_keyboard(user_uuid, back_to=back_to))
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     await _apply_user_update(message, user_uuid, payload, back_to=back_to)
@@ -656,6 +674,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         if not text:
             await _send_user_create_prompt(message, _("user.prompt_username"), ctx=ctx)
             PENDING_INPUT[user_id] = ctx
+            asyncio.create_task(_cleanup_message(message, delay=0.5))
             return
         data["username"] = text.split()[0]
         ctx["stage"] = "description"
@@ -663,6 +682,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         await _send_user_create_prompt(
             message, _("user.prompt_description"), user_create_description_keyboard(), ctx=ctx
         )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "description":
@@ -672,6 +692,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         await _send_user_create_prompt(
             message, _("user.prompt_expire"), user_create_expire_keyboard(), ctx=ctx
         )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "expire":
@@ -683,6 +704,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
             await _send_user_create_prompt(
                 message, _("user.invalid_expire"), user_create_expire_keyboard(), ctx=ctx
             )
+            asyncio.create_task(_cleanup_message(message, delay=0.5))
             return
         data["expire_at"] = text
         ctx["stage"] = "traffic"
@@ -690,6 +712,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         await _send_user_create_prompt(
             message, _("user.prompt_traffic"), user_create_traffic_keyboard(), ctx=ctx
         )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "traffic":
@@ -700,11 +723,13 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
             await _send_user_create_prompt(
                 message, _("user.invalid_traffic"), user_create_traffic_keyboard(), ctx=ctx
             )
+            asyncio.create_task(_cleanup_message(message, delay=0.5))
             return
         data["traffic_limit_bytes"] = int(gb * 1024 * 1024 * 1024)
         ctx["stage"] = "hwid"
         PENDING_INPUT[user_id] = ctx
         await _send_user_create_prompt(message, _("user.prompt_hwid"), user_create_hwid_keyboard(), ctx=ctx)
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "hwid":
@@ -715,6 +740,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
             await _send_user_create_prompt(
                 message, _("user.invalid_hwid"), user_create_hwid_keyboard(), ctx=ctx
             )
+            asyncio.create_task(_cleanup_message(message, delay=0.5))
             return
         data["hwid_limit"] = hwid
         ctx["stage"] = "telegram"
@@ -722,6 +748,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         await _send_user_create_prompt(
             message, _("user.prompt_telegram"), user_create_telegram_keyboard(), ctx=ctx
         )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "telegram":
@@ -733,6 +760,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
                 await _send_user_create_prompt(
                     message, _("user.invalid_telegram"), user_create_telegram_keyboard(), ctx=ctx
                 )
+                asyncio.create_task(_cleanup_message(message, delay=0.5))
                 return
         else:
             data["telegram_id"] = None
@@ -745,6 +773,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
             await _send_user_create_prompt(
                 message, _("user.squad_load_failed"), user_create_squad_keyboard([]), ctx=ctx
             )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     if stage == "squad":
@@ -754,6 +783,7 @@ async def _handle_user_create_input(message: Message, ctx: dict) -> None:
         await _send_user_create_prompt(
             message, _build_user_create_preview(data), user_create_confirm_keyboard(), ctx=ctx
         )
+        asyncio.create_task(_cleanup_message(message, delay=0.5))
         return
 
     # Default: stay on confirm
@@ -1113,6 +1143,7 @@ async def cb_user_edit_menu(callback: CallbackQuery) -> None:
         await callback.message.edit_text(
             header,
             reply_markup=user_edit_keyboard(user_uuid, back_to=back_to),
+            parse_mode="HTML",
         )
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=main_menu_keyboard())

@@ -26,6 +26,12 @@ async def _cleanup_message(message: Message, delay: float = 0.0) -> None:
         )
 
 
+def _schedule_message_cleanup(message: Message, delay: float = 0.5) -> None:
+    """Планирует удаление сообщения пользователя после обработки."""
+    if isinstance(message, Message):
+        asyncio.create_task(_cleanup_message(message, delay=delay))
+
+
 async def _send_clean_message(
     target: Message | CallbackQuery,
     text: str,
