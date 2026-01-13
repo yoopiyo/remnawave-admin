@@ -1,117 +1,207 @@
-# Remnawave Admin Bot
-**Available languages:** [Русский](README.md)
+# 🤖 Remnawave Admin Bot
 
-Telegram bot for managing Remnawave panel. Supports RU/EN localization, inline buttons, Docker Compose deployment.
+<div align="center">
 
-## Features
+**Telegram bot for managing Remnawave panel**
 
-- **User Management**: View, create, edit users, manage subscriptions, bulk operations
-- **Node Management**: Monitor nodes, enable/disable, restart, reset traffic, assign profiles
-- **Host Management**: Manage hosts, bulk operations
-- **Templates**: Create and manage subscription templates
-- **Snippets**: Manage configuration snippets
-- **API Tokens**: Manage API access tokens
-- **Billing**: Track billing history, manage providers and billing nodes
-- **Statistics**: Panel and server statistics with detailed metrics
-- **Multi-language**: Russian and English support
+[![Docker](https://img.shields.io/badge/Docker-Ready-blue)](https://www.docker.com/)
+[![Python](https://img.shields.io/badge/Python-3.12+-green)](https://www.python.org/)
+[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
 
-## Quick Start
+[English](README_EN.md) | [Русский](README.md)
 
-### Prerequisites
+</div>
 
-- Python 3.12+ (for local development)
-- Docker and Docker Compose (for deployment)
+---
+
+## ✨ Features
+
+### 👥 User Management
+- 🔍 Search users by username, email, Telegram ID, description
+- ➕ Create users with step-by-step input
+- ✏️ Edit profile (traffic, limits, contacts, squads)
+- 💻 Manage HWID devices (add, delete, limits)
+- 📊 User statistics (traffic, subscription history, node usage)
+- 🔄 Bulk operations with users
+
+### 🛰 Node Management
+- 📋 View node list with real-time data
+- 🔄 Enable/disable nodes
+- 🔁 Restart nodes
+- 📊 Monitor traffic and usage
+- ⚙️ Assign configuration profiles
+- 📈 Node statistics
+
+### 🖥 Host Management
+- 📋 View host list
+- ➕ Create and edit hosts
+- 🔄 Bulk operations
+
+### 🧰 Resources
+- 📑 **Templates** - create and manage subscription templates
+- ✂️ **Snippets** - manage configuration snippets
+- 🔑 **API Tokens** - manage access tokens
+- 📄 **Configs** - view configurations
+
+### 💰 Billing
+- 📜 Payment history
+- 🏢 Provider management
+- 🖥 Billing node management
+- 📊 Billing statistics
+
+### 📊 Statistics and Monitoring
+- 📈 Panel statistics (users, nodes, hosts)
+- 🖥 Server statistics (CPU, memory, uptime)
+- 📶 Traffic statistics
+- 🔔 Event notifications via webhook
+
+### 🌐 Additional Features
+- 🌍 Russian and English language support
+- 🔔 Webhook notifications for events (user creation, modification, deletion)
+- 🔐 Secure webhook authentication via HMAC-SHA256
+- 🎨 Intuitive interface with inline buttons
+- 🐳 Ready for deployment via Docker Compose
+
+---
+
+## 🚀 Quick Start
+
+### 📋 Prerequisites
+
+- **Docker** and **Docker Compose** (recommended)
+- Or **Python 3.12+** (for local development)
 - Telegram Bot Token from [@BotFather](https://t.me/BotFather)
 - Remnawave API access token
 
-### Installation
+### 🔧 Installation
 
-1. **Clone the repository:**
-   ```bash
-   git clone https://github.com/case211/remnawave-admin.git
-   ```
-   ```bash
-   cd remnawave-admin
-   ```
+#### 1. Clone the repository
 
-2. **Copy environment file:**
-   ```bash
-   cp .env.example .env
-   ```
+```bash
+git clone https://github.com/case211/remnawave-admin.git
+cd remnawave-admin
+```
 
-3. **Edit `.env` file:**
-   ```bash
-   nano .env
-   ```
+#### 2. Configure environment variables
 
-   Required variables:
-   ```env
-   BOT_TOKEN=your_telegram_bot_token
-   API_BASE_URL=http://remnawave:3000
-   API_TOKEN=your_api_token
-   ADMINS=123456789,987654321
-   DEFAULT_LOCALE=ru
-   LOG_LEVEL=INFO
-   ```
+Create `.env` file based on `.env.example`:
 
-   **For Docker deployment**, use:
-   - `API_BASE_URL=http://remnawave:3000` (if bot is in the same Docker network)
-   - `API_BASE_URL=https://your-panel-domain.com/api` (if bot is external)
+```bash
+cp .env.example .env
+nano .env
+```
 
-4. **Deploy with Docker Compose:**
-   ```bash
-   docker compose pull
-   docker compose up -d
-   ```
+**Required variables:**
 
-5. **Check logs:**
-   ```bash
-   docker compose logs -f bot
-   ```
+```env
+# Telegram Bot
+BOT_TOKEN=your_telegram_bot_token
 
-## Local Development
+# Remnawave API
+API_BASE_URL=http://remnawave:3000  # For Docker network
+# or
+API_BASE_URL=https://your-panel-domain.com/api  # For external API
+API_TOKEN=your_api_token
 
-1. **Create virtual environment:**
-   ```bash
-   python -m venv .venv
-   source .venv/bin/activate  # Linux/Mac
-   # or
-   .venv\Scripts\activate  # Windows
-   ```
+# Administrators
+ADMINS=123456789,987654321  # Administrator IDs separated by commas
 
-2. **Install dependencies:**
-   ```bash
-   pip install -r requirements.txt
-   ```
+# Localization
+DEFAULT_LOCALE=ru  # ru or en
+LOG_LEVEL=INFO
+```
 
-3. **Set up environment:**
-   ```bash
-   cp .env.example .env
-   nano .env
-   ```
+**Optional variables:**
 
-   For local development, use:
-   ```env
-   API_BASE_URL=https://your-panel-domain.com
-   ```
+```env
+# Telegram Notifications
+NOTIFICATIONS_CHAT_ID=-1001234567890  # Group/channel ID
+NOTIFICATIONS_TOPIC_ID=123  # Topic ID (optional)
 
-4. **Run the bot:**
-   ```bash
-   python -m src.main
-   ```
+# Webhook (for receiving notifications from panel)
+WEBHOOK_SECRET=your_secret_key  # Must match WEBHOOK_SECRET_HEADER in panel
+WEBHOOK_PORT=8080  # Port for webhook server
+```
 
-## Configuration
+> 💡 **Tip:** Get your Telegram ID by messaging [@userinfobot](https://t.me/userinfobot)
+
+#### 3. Deploy with Docker Compose
+
+```bash
+# Create Docker network (if not exists)
+docker network create remnawave-network
+
+# Start the bot
+docker compose pull
+docker compose up -d
+
+# Check logs
+docker compose logs -f bot
+```
+
+#### 4. Configure webhook in Remnawave panel
+
+Detailed webhook setup instructions are available in [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
+
+**Quick setup:**
+1. In Remnawave panel, set webhook URL: `http://bot:8080/webhook` (for Docker) or `https://your-bot-domain.com/webhook` (for external)
+2. Set `WEBHOOK_SECRET_HEADER` in panel equal to `WEBHOOK_SECRET` in bot
+
+---
+
+## 💻 Local Development
+
+### 1. Create virtual environment
+
+```bash
+python -m venv .venv
+source .venv/bin/activate  # Linux/Mac
+# or
+.venv\Scripts\activate  # Windows
+```
+
+### 2. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 3. Configure environment
+
+```bash
+cp .env.example .env
+nano .env
+```
+
+For local development, use:
+```env
+API_BASE_URL=https://your-panel-domain.com/api
+```
+
+### 4. Run the bot
+
+```bash
+python -m src.main
+```
+
+---
+
+## ⚙️ Configuration
 
 ### Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `BOT_TOKEN` | Yes | - | Telegram bot token from @BotFather |
-| `API_BASE_URL` | Yes | - | Remnawave API base URL |
-| `API_TOKEN` | Yes | - | API authentication token |
-| `ADMINS` | Yes | - | Comma-separated list of Telegram user IDs |
-| `DEFAULT_LOCALE` | No | `ru` | Default language (`ru` or `en`) |
-| `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `BOT_TOKEN` | ✅ Yes | - | Telegram bot token from @BotFather |
+| `API_BASE_URL` | ✅ Yes | - | Remnawave API base URL |
+| `API_TOKEN` | ✅ Yes | - | API authentication token |
+| `ADMINS` | ✅ Yes | - | Comma-separated list of administrator IDs |
+| `DEFAULT_LOCALE` | ❌ No | `ru` | Default language (`ru` or `en`) |
+| `LOG_LEVEL` | ❌ No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
+| `NOTIFICATIONS_CHAT_ID` | ❌ No | - | Group/channel ID for notifications |
+| `NOTIFICATIONS_TOPIC_ID` | ❌ No | - | Topic ID in group (for forums) |
+| `WEBHOOK_SECRET` | ❌ No | - | Secret key for webhook verification (HMAC-SHA256) |
+| `WEBHOOK_PORT` | ❌ No | `8080` | Port for webhook server |
 
 ### Docker Network
 
@@ -121,109 +211,178 @@ The bot requires access to the `remnawave-network` Docker network. If it doesn't
 docker network create remnawave-network
 ```
 
-## Commands
+---
 
-### Bot Commands
+## 📱 Bot Commands
 
-- `/start` - Start the bot and show main menu
-- `/help` - Show help information
-- `/health` - Show system health status
-- `/stats` - Show panel and server statistics
-- `/bandwidth` - Show bandwidth statistics
-- `/user <username|telegram_id>` - View user details
-- `/user_create <username> <expire_iso> [telegram_id]` - Create new user
-- `/sub <short_uuid>` - Open subscription link
-- `/node <uuid>` - View node details
-- `/host <uuid>` - View host details
+### Basic Commands
+
+| Command | Description |
+|---------|-------------|
+| `/start` | Start the bot and show main menu |
+| `/help` | Show command help |
+| `/health` | Show system health status |
+| `/stats` | Show panel and server statistics |
+| `/bandwidth` | Show traffic statistics |
+
+### User Management Commands
+
+| Command | Description |
+|---------|-------------|
+| `/user <username\|telegram_id>` | View user information |
+| `/user_create <username> <expire_iso> [telegram_id]` | Create new user |
+
+### Infrastructure Commands
+
+| Command | Description |
+|---------|-------------|
+| `/node <uuid>` | View node information |
+| `/host <uuid>` | View host information |
+| `/sub <short_uuid>` | Open subscription link |
 
 ### Menu Navigation
 
 The bot uses inline keyboards for navigation. Main sections:
 
-- **Users** - User management, subscriptions, bulk operations
-- **Nodes** - Node management and monitoring
-- **Hosts** - Host management
-- **Resources** - Templates, snippets, API tokens, configs
-- **Billing** - Billing history, providers, billing nodes
-- **System** - Health, statistics, node management
+- **👥 Users** - User management, search, creation, editing, statistics, HWID
+- **🛰 Nodes** - Node management and monitoring, traffic statistics
+- **🖥 Hosts** - Host management, bulk operations
+- **🧰 Resources** - Templates, snippets, API tokens, configs
+- **💰 Billing** - Payment history, providers, billing nodes
+- **📊 System** - System health, statistics, management
 
-## Project Structure
+---
+
+## 📁 Project Structure
 
 ```
 remnawave-admin/
 ├── src/
-│   ├── main.py              # Entry point
-│   ├── config.py            # Configuration management
-│   ├── handlers/
-│   │   ├── basic.py         # Command and callback handlers
-│   │   └── errors.py       # Error handlers
-│   ├── keyboards/          # Inline keyboard definitions
-│   ├── services/
-│   │   └── api_client.py  # Remnawave API client
-│   └── utils/              # Utilities (formatters, i18n, logger, auth)
-├── locales/
-│   ├── ru/                 # Russian translations
-│   └── en/                 # English translations
-├── docker-compose.yml      # Docker Compose configuration
-├── Dockerfile              # Docker image definition
-└── requirements.txt        # Python dependencies
+│   ├── main.py                 # Application entry point
+│   ├── config.py               # Configuration management
+│   ├── handlers/               # Event handlers
+│   │   ├── basic.py            # Basic handlers
+│   │   ├── commands.py         # Command handlers
+│   │   ├── users.py            # User management
+│   │   ├── nodes.py            # Node management
+│   │   ├── hosts.py            # Host management
+│   │   ├── resources.py        # Resources (templates, snippets)
+│   │   ├── billing.py          # Billing
+│   │   ├── system.py           # System information
+│   │   ├── navigation.py       # Navigation
+│   │   ├── bulk.py             # Bulk operations
+│   │   ├── common.py           # Common utilities
+│   │   ├── errors.py           # Error handling
+│   │   └── state.py            # State management
+│   ├── keyboards/              # Inline keyboards
+│   │   ├── main_menu.py        # Main menu
+│   │   ├── user_actions.py    # User actions
+│   │   ├── nodes_menu.py       # Node menu
+│   │   └── ...                 # Other keyboards
+│   ├── services/               # Services
+│   │   ├── api_client.py       # Remnawave API client
+│   │   └── webhook.py          # Webhook server (FastAPI)
+│   └── utils/                   # Utilities
+│       ├── formatters.py       # Data formatting
+│       ├── notifications.py     # Notifications
+│       ├── auth.py              # Authentication
+│       ├── logger.py            # Logging
+│       └── i18n.py              # Internationalization
+├── locales/                     # Localization
+│   ├── ru/                      # Russian language
+│   │   └── messages.json
+│   └── en/                      # English language
+│       └── messages.json
+├── docker-compose.yml          # Docker Compose configuration
+├── Dockerfile                  # Docker image definition
+├── requirements.txt            # Python dependencies
+├── WEBHOOK_SETUP.md           # Webhook setup instructions
+└── README.md                   # This file
 ```
 
-## Docker Image
+---
 
-The bot image is automatically built and published to GitHub Container Registry:
+## 🔔 Webhook Notifications
 
-```
-ghcr.io/case211/remnawave-admin:latest
-```
+The bot supports receiving webhook notifications from Remnawave panel about various events:
 
-Build workflow: `.github/workflows/docker.yml`
+- **Users**: creation, modification, deletion, disabling, subscription expiration
+- **Nodes**: creation, modification, deletion, connection loss/restoration
+- **HWID Devices**: addition, deletion
+- **Service**: panel events, login attempts
 
-## Troubleshooting
+Detailed setup instructions are available in [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md)
 
-### Bot doesn't respond
+---
 
-1. Check if the bot is running:
+## 🔧 Troubleshooting
+
+### Bot not responding
+
+1. **Check bot status:**
    ```bash
    docker compose ps
    ```
 
-2. Check logs for errors:
+2. **Check logs for errors:**
    ```bash
    docker compose logs -f bot
    ```
 
-3. Verify environment variables:
+3. **Check environment variables:**
    ```bash
    docker compose config
    ```
 
 ### API connection issues
 
-1. Verify `API_BASE_URL` is correct
-2. Check if the Docker network exists:
+1. Make sure `API_BASE_URL` is set correctly
+2. Check if Docker network exists:
    ```bash
    docker network ls | grep remnawave-network
    ```
-3. For external API, ensure the URL is accessible
+3. For external API, ensure URL is accessible and token is valid
 
-### Permission denied
+### Access denied
 
-- Ensure your Telegram user ID is in the `ADMINS` environment variable
-- Get your user ID by messaging [@userinfobot](https://t.me/userinfobot)
+- Make sure your Telegram ID is listed in `ADMINS` environment variable
+- Get your ID by messaging [@userinfobot](https://t.me/userinfobot)
 
-## Contributing
+### Webhook issues
+
+- Check that `WEBHOOK_SECRET` in bot matches `WEBHOOK_SECRET_HEADER` in panel
+- Ensure webhook URL is accessible from panel
+- Check logs for authentication errors
+- See [WEBHOOK_SETUP.md](WEBHOOK_SETUP.md) for more details
+
+---
+
+## 🤝 Contributing
+
+We welcome contributions to the project!
 
 1. Fork the repository
-2. Create a feature branch
-3. Make your changes
-4. Submit a pull request
+2. Create a feature branch (`git checkout -b feature/amazing-feature`)
+3. Make changes and commit (`git commit -m 'Add amazing feature'`)
+4. Push to branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
 
-## License
+---
 
-[Add your license here]
+## 📄 License
 
-## Support
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
 
-For issues and questions, please open an issue on GitHub.
+---
 
+## 💬 Support
+
+For questions and issues, create an [issue](https://github.com/case211/remnawave-admin/issues) on GitHub.
+
+---
+
+<div align="center">
+
+**Made with ❤️ for Remnawave management**
+
+</div>
