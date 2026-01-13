@@ -68,6 +68,10 @@ async def handle_pending(message: Message) -> None:
         return
     user_id = message.from_user.id
     if user_id not in PENDING_INPUT:
+        # Если это не ожидаемый ввод, удаляем сообщение
+        from src.handlers.common import _cleanup_message
+        import asyncio
+        asyncio.create_task(_cleanup_message(message, delay=0.0))
         return
     ctx = PENDING_INPUT.pop(user_id)
     action = ctx.get("action")

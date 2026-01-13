@@ -204,6 +204,8 @@ async def _start_user_search_flow(target: Message | CallbackQuery, preset_query:
     if preset_query:
         await _run_user_search(target, preset_query)
     else:
+        # Устанавливаем PENDING_INPUT, чтобы сообщения пользователя не удалялись сразу
+        PENDING_INPUT[user_id] = {"action": "user_search"}
         await _send_clean_message(target, _("user.search_prompt"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
 
 

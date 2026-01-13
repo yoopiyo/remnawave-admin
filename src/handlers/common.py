@@ -77,7 +77,10 @@ async def _not_admin(message: Message | CallbackQuery) -> bool:
             asyncio.create_task(_cleanup_message(message, delay=delay))
         elif not is_pending_input:
             # Для обычных текстовых сообщений (не команды и не ожидаемый ввод) удаляем сразу
-            asyncio.create_task(_cleanup_message(message, delay=0.0))
+            # НО: если это может быть ожидаемый ввод (например, после промпта поиска),
+            # не удаляем сразу, а дадим обработчику handle_pending решить
+            # Удаление произойдет в handle_pending, если это не ожидаемый ввод
+            pass  # Не удаляем здесь, пусть handle_pending решает
     return False
 
 
