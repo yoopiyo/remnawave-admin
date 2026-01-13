@@ -467,27 +467,35 @@ def _format_user_edit_snapshot(info: dict, t) -> str:
         else:
             squad_display = active_squads[0] if len(active_squads) > 0 else t("user.not_set")
 
-    return "\n".join(
-        [
-            t("user.edit_prompt"),
-            "",
-            f"👤 <code>{_esc(username)}</code>",
-            f"🔖 Short: <code>{_esc(short_uuid)}</code>",
-            f"🆔 UUID: <code>{_esc(uuid)}</code>",
-            "",
-            t("user.current").format(value=""),
-            f"• {t('user.edit_status_label')}: {info.get('status', 'UNKNOWN')}",
-            f"• {t('user.edit_traffic_limit')}: {format_bytes(traffic_limit)}",
-            f"• {t('user.edit_strategy')}: {strategy or t('user.not_set')}",
-            f"• {t('user.edit_expire')}: {expire}",
-            f"• {t('user.edit_hwid')}: {hwid if hwid is not None else t('user.not_set')}",
-            f"• {t('user.edit_tag')}: {tag}",
-            f"• {t('user.edit_telegram')}: {telegram_id}",
-            f"• {t('user.edit_email')}: {email}",
-            f"• {t('user.edit_description')}: {description}",
-            f"• {t('user.edit_squad')}: {squad_display}",
-        ]
-    )
+    # Форматируем информацию о пользователе с группировкой по секциям
+    lines = [
+        f"<b>✏️ {t('user.edit_prompt')}</b>",
+        "",
+        f"<b>{t('user.edit_section_user_info')}</b>",
+        f"   Username: <code>{_esc(username)}</code>",
+        f"   🔖 Short: <code>{_esc(short_uuid)}</code>",
+        f"   🆔 UUID: <code>{_esc(uuid)}</code>",
+        f"   {t('user.edit_status_label')}: <b>{info.get('status', 'UNKNOWN')}</b>",
+        "",
+        f"<b>{t('user.edit_section_traffic')}</b>",
+        f"   {t('user.edit_traffic_limit')}: <code>{format_bytes(traffic_limit)}</code>",
+        f"   {t('user.edit_strategy')}: <code>{strategy or t('user.not_set')}</code>",
+        f"   {t('user.edit_expire')}: <code>{expire}</code>",
+        f"   {t('user.edit_hwid')}: <code>{hwid if hwid is not None else t('user.not_set')}</code>",
+        "",
+        f"<b>{t('user.edit_section_additional')}</b>",
+        f"   {t('user.edit_tag')}: <code>{tag}</code>",
+        f"   {t('user.edit_description')}: <code>{_esc(description)}</code>",
+        "",
+        f"<b>{t('user.edit_section_contacts')}</b>",
+        f"   {t('user.edit_telegram')}: <code>{telegram_id}</code>",
+        f"   {t('user.edit_email')}: <code>{email}</code>",
+        "",
+        f"<b>{t('user.edit_section_squad')}</b>",
+        f"   {t('user.edit_squad')}: <code>{_esc(squad_display)}</code>",
+    ]
+    
+    return "\n".join(lines)
 
 
 def _current_user_edit_values(info: dict) -> dict[str, str]:
