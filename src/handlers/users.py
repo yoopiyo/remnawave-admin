@@ -460,12 +460,18 @@ def _format_user_edit_snapshot(info: dict, t) -> str:
     active_squads = info.get("activeInternalSquads", [])
     squad_display = t("user.not_set")
     if active_squads:
-        # Пытаемся получить имя сквада (если доступно в ответе)
-        squad_info = info.get("internalSquads", [])
-        if squad_info:
-            squad_display = squad_info[0].get("name", active_squads[0]) if isinstance(squad_info, list) and len(squad_info) > 0 else active_squads[0]
+        first_squad = active_squads[0]
+        # activeInternalSquads может быть списком словарей или списком строк UUID
+        if isinstance(first_squad, dict):
+            # Если это словарь, извлекаем имя сквада
+            squad_display = first_squad.get("name", first_squad.get("uuid", t("user.not_set")))
         else:
-            squad_display = active_squads[0] if len(active_squads) > 0 else t("user.not_set")
+            # Если это строка UUID, пытаемся получить имя сквада
+            squad_info = info.get("internalSquads", [])
+            if squad_info and isinstance(squad_info, list) and len(squad_info) > 0:
+                squad_display = squad_info[0].get("name", first_squad)
+            else:
+                squad_display = first_squad
 
     # Форматируем информацию о пользователе с группировкой по секциям
     lines = [
@@ -492,7 +498,7 @@ def _format_user_edit_snapshot(info: dict, t) -> str:
         f"   {t('user.edit_email')}: <code>{email}</code>",
         "",
         f"<b>{t('user.edit_section_squad')}</b>",
-        f"   {t('user.edit_squad')}: <code>{_esc(squad_display)}</code>",
+        f"   <code>{_esc(squad_display)}</code>",
     ]
     
     return "\n".join(lines)
