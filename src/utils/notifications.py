@@ -128,14 +128,26 @@ async def send_user_notification(
         
         squad_display = "—"
         if active_squads:
-            # Сначала проверяем, есть ли информация о сквадах в данных
-            squad_info = info.get("internalSquads", [])
-            if squad_info and isinstance(squad_info, list) and len(squad_info) > 0:
-                # Если есть информация о сквадах, используем имя
-                squad_display = squad_info[0].get("name", active_squads[0])
+            # Сначала проверяем, есть ли информация о сквадах в activeInternalSquads
+            # activeInternalSquads может быть списком словарей или списком строк UUID
+            first_squad = active_squads[0]
+            if isinstance(first_squad, dict):
+                # Если это словарь, извлекаем UUID и имя
+                squad_uuid = first_squad.get("uuid", "")
+                squad_name = first_squad.get("name")
+                if squad_name:
+                    squad_display = squad_name
+                elif squad_uuid:
+                    squad_display = await _get_squad_name_by_uuid(squad_uuid)
             else:
-                # Если нет информации о сквадах, получаем имя из API
-                squad_display = await _get_squad_name_by_uuid(active_squads[0])
+                # Если это строка UUID
+                squad_info = info.get("internalSquads", [])
+                if squad_info and isinstance(squad_info, list) and len(squad_info) > 0:
+                    # Если есть информация о сквадах, используем имя
+                    squad_display = squad_info[0].get("name", first_squad)
+                else:
+                    # Если нет информации о сквадах, получаем имя из API
+                    squad_display = await _get_squad_name_by_uuid(first_squad)
         elif external_squad:
             squad_display = f"External: {external_squad[:8]}..."
         
@@ -147,13 +159,25 @@ async def send_user_notification(
             old_squad_display = "—"
             if old_active_squads:
                 # Сначала проверяем, есть ли информация о сквадах в данных
-                old_squad_info = old_info.get("internalSquads", [])
-                if old_squad_info and isinstance(old_squad_info, list) and len(old_squad_info) > 0:
-                    # Если есть информация о сквадах, используем имя
-                    old_squad_display = old_squad_info[0].get("name", old_active_squads[0])
+                # activeInternalSquads может быть списком словарей или списком строк UUID
+                old_first_squad = old_active_squads[0]
+                if isinstance(old_first_squad, dict):
+                    # Если это словарь, извлекаем UUID и имя
+                    old_squad_uuid = old_first_squad.get("uuid", "")
+                    old_squad_name = old_first_squad.get("name")
+                    if old_squad_name:
+                        old_squad_display = old_squad_name
+                    elif old_squad_uuid:
+                        old_squad_display = await _get_squad_name_by_uuid(old_squad_uuid)
                 else:
-                    # Если нет информации о сквадах, получаем имя из API
-                    old_squad_display = await _get_squad_name_by_uuid(old_active_squads[0])
+                    # Если это строка UUID
+                    old_squad_info = old_info.get("internalSquads", [])
+                    if old_squad_info and isinstance(old_squad_info, list) and len(old_squad_info) > 0:
+                        # Если есть информация о сквадах, используем имя
+                        old_squad_display = old_squad_info[0].get("name", old_first_squad)
+                    else:
+                        # Если нет информации о сквадах, получаем имя из API
+                        old_squad_display = await _get_squad_name_by_uuid(old_first_squad)
             elif old_external_squad:
                 old_squad_display = f"External: {old_external_squad[:8]}..."
             

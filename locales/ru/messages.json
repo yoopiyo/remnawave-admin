@@ -97,7 +97,7 @@
   },
   "user": {
     "not_found": "🙅 Пользователь не найден.",
-    "summary": "👤 {username}\n{statusEmoji} Статус: {status}\n💬 TG ID: <code>{telegramId}</code>\n🔗 Подписка: {subscriptionUrl}\n\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n\n📶 Трафик: {used} / {limit}\n⏳ Истекает: {expire}\n💻 HWID: {hwid}\n📳 Был онлайн: {online}\n📅 Создан: {created}",
+    "summary": "👤 <code>{username}</code>\n{statusEmoji} Статус: {status}\n💬 TG ID: <code>{telegramId}</code>\n🔗 Подписка: {subscriptionUrl}\n\n🆔 UUID: <code>{uuid}</code>\n🔖 Short: <code>{shortUuid}</code>\n\n📶 Трафик: {used} / {limit}\n⏳ Истекает: {expire}\n💻 HWID: {hwid}\n📳 Был онлайн: {online}\n📅 Создан: {created}",
     "configs_button": "🧩 Конфиги",
     "configs_title": "🧩 Подписные ссылки пользователя",
     "subscription_links_title": "🔗 Подписные ссылки:",

@@ -97,7 +97,7 @@
   },
   "user": {
     "not_found": "🙅 User not found.",
-    "summary": "👤 {username}\n{statusEmoji} Status: {status}\n💬 TG ID: <code>{telegramId}</code>\n🔗 Subscription: {subscriptionUrl}\n\n🆔 UUID: {uuid}\n🔖 Short: {shortUuid}\n\n📶 Traffic: {used} / {limit}\n⏳ Expires: {expire}\n💻 HWID: {hwid}\n📳 Last online: {online}\n📅 Created: {created}",
+    "summary": "👤 <code>{username}</code>\n{statusEmoji} Status: {status}\n💬 TG ID: <code>{telegramId}</code>\n🔗 Subscription: {subscriptionUrl}\n\n🆔 UUID: <code>{uuid}</code>\n🔖 Short: <code>{shortUuid}</code>\n\n📶 Traffic: {used} / {limit}\n⏳ Expires: {expire}\n💻 HWID: {hwid}\n📳 Last online: {online}\n📅 Created: {created}",
     "configs_button": "🧩 Configs",
     "configs_title": "🧩 User subscription links",
     "subscription_links_title": "🔗 Subscription links:",
