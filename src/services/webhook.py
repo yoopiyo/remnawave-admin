@@ -1,4 +1,7 @@
 """Webhook сервер для приема уведомлений об изменении подписки от панели Remnawave."""
+import hmac
+import hashlib
+import json
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -22,12 +25,15 @@ from src.utils.notifications import (
 app = FastAPI(title="Remnawave Admin Webhook")
 
 
-def verify_webhook_secret(request: Request) -> bool:
+def verify_webhook_secret(request: Request, body: bytes) -> bool:
     """
     Проверяет подпись webhook из заголовка X-Remnawave-Signature.
     
-    Согласно официальной документации Remnawave, панель отправляет
-    подпись в заголовке X-Remnawave-Signature.
+    Панель Remnawave может использовать два метода:
+    1. Простое сравнение строк (устаревший метод)
+    2. HMAC-SHA256 подпись от тела запроса (рекомендуемый метод)
+    
+    Функция проверяет оба метода для совместимости.
     """
     settings = get_settings()
     if not settings.webhook_secret:
@@ -55,21 +61,42 @@ def verify_webhook_secret(request: Request) -> bool:
         )
         return False
     
-    # Сравниваем подпись с секретным ключом
-    is_valid = signature == settings.webhook_secret
+    # Метод 1: Простое сравнение строк (для обратной совместимости)
+    if signature == settings.webhook_secret:
+        logger.debug("Webhook signature verified using simple string comparison")
+        return True
     
-    if not is_valid:
-        logger.error(
-            "Webhook signature mismatch! "
-            "Ожидаемая длина: %d, Полученная длина: %d. "
-            "Первые 10 символов полученного ключа: '%s'. "
-            "Убедитесь, что WEBHOOK_SECRET в боте совпадает с WEBHOOK_SECRET_HEADER в панели Remnawave.",
-            len(settings.webhook_secret) if settings.webhook_secret else 0,
-            len(signature) if signature else 0,
-            signature[:10] if signature else "None"
-        )
-    
-    return is_valid
+    # Метод 2: HMAC-SHA256 подпись от тела запроса
+    try:
+        # Вычисляем HMAC-SHA256 от тела запроса
+        expected_signature = hmac.new(
+            settings.webhook_secret.encode('utf-8'),
+            body,
+            hashlib.sha256
+        ).hexdigest()
+        
+        # Сравниваем с полученной подписью (безопасное сравнение)
+        is_valid = hmac.compare_digest(expected_signature, signature)
+        
+        if is_valid:
+            logger.debug("Webhook signature verified using HMAC-SHA256")
+            return True
+        else:
+            logger.error(
+                "Webhook signature mismatch! "
+                "Ожидаемая длина: %d, Полученная длина: %d. "
+                "Первые 10 символов полученного ключа: '%s'. "
+                "Первые 10 символов ожидаемого HMAC: '%s'. "
+                "Убедитесь, что WEBHOOK_SECRET в боте совпадает с WEBHOOK_SECRET_HEADER в панели Remnawave.",
+                len(expected_signature) if expected_signature else 0,
+                len(signature) if signature else 0,
+                signature[:10] if signature else "None",
+                expected_signature[:10] if expected_signature else "None"
+            )
+            return False
+    except Exception as exc:
+        logger.error("Error verifying HMAC signature: %s", exc)
+        return False
 
 
 @app.post("/webhook")
@@ -85,7 +112,7 @@ async def remnawave_webhook(request: Request):
     }
     
     Заголовки:
-    - X-Remnawave-Signature: подпись для проверки
+    - X-Remnawave-Signature: подпись для проверки (HMAC-SHA256 или простое значение)
     - X-Remnawave-Timestamp: временная метка (опционально)
     
     Поддерживаемые события:
@@ -123,12 +150,17 @@ async def remnawave_webhook(request: Request):
     - crm.infra_billing_node_payment_overdue_48hrs
     - crm.infra_billing_node_payment_overdue_7_days
     """
-    if not verify_webhook_secret(request):
+    # Читаем тело запроса как байты для проверки HMAC подписи
+    body = await request.body()
+    
+    # Проверяем подпись
+    if not verify_webhook_secret(request, body):
         logger.warning("Webhook request rejected: invalid secret")
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     try:
-        data = await request.json()
+        # Парсим JSON из прочитанного тела
+        data = json.loads(body.decode('utf-8'))
         logger.info("Received webhook from Remnawave panel: %s", data)
         
         # Определяем тип события (официальные события из events.ts)
@@ -326,11 +358,16 @@ async def test_webhook(request: Request):
     Тестовый endpoint для проверки работы webhook.
     Принимает userUuid и отправляет уведомление об обновлении.
     """
-    if not verify_webhook_secret(request):
+    # Читаем тело запроса как байты для проверки HMAC подписи
+    body = await request.body()
+    
+    # Проверяем подпись
+    if not verify_webhook_secret(request, body):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     try:
-        data = await request.json()
+        # Парсим JSON из прочитанного тела
+        data = json.loads(body.decode('utf-8'))
         user_uuid = data.get("userUuid")
         if not user_uuid:
             raise HTTPException(status_code=400, detail="userUuid is required")
