@@ -32,11 +32,26 @@ WEBHOOK_SECRET=ваш_секретный_ключ_минимум_32_символ
 WEBHOOK_ENABLED=true
 
 # URL админского бота для отправки webhook
-# Если бот и панель в одной Docker сети:
-WEBHOOK_URL=http://remnawave-admin-bot:8080/webhook
 
-# Или если бот доступен извне:
-WEBHOOK_URL=https://ваш-домен-админ-бота.com/webhook
+# Вариант 1: Бот и панель в одной Docker сети (локально)
+# ⚠️ ВАЖНО: Используйте HTTP, а не HTTPS для внутренних Docker сервисов!
+# Webhook сервер бота работает по HTTP, а не HTTPS
+WEBHOOK_URL=http://remnawave-admin-bot:8080/webhook
+# или если сервис называется по-другому (проверьте имя в docker-compose.yml):
+# WEBHOOK_URL=http://bot:8080/webhook
+
+# Вариант 2: Бот на другом сервере через HTTP (если безопасность позволяет)
+# Используйте IP адрес или домен без SSL
+WEBHOOK_URL=http://IP-АДРЕС-СЕРВЕРА:8080/webhook
+# или
+WEBHOOK_URL=http://домен-бота.com:8080/webhook
+
+# Вариант 3: Бот на другом сервере через HTTPS (РЕКОМЕНДУЕТСЯ для продакшена)
+# ⚠️ ВАЖНО: Убедитесь, что SSL сертификат валидный и не истек!
+# Нужен reverse proxy (nginx, traefik, caddy) с валидным SSL сертификатом
+WEBHOOK_URL=https://домен-бота.com/webhook
+# или если используется нестандартный порт:
+# WEBHOOK_URL=https://домен-бота.com:8443/webhook
 
 # Секретный ключ (должен совпадать с WEBHOOK_SECRET в админском боте)
 # Панель будет использовать этот ключ для создания HMAC-SHA256 подписи от тела запроса
@@ -192,6 +207,103 @@ services:
 3. Проверьте, что порт проброшен в Docker
 4. Проверьте логи панели на наличие ошибок отправки webhook
 5. Проверьте логи админского бота
+
+### Ошибка SSL/TLS (EPROTO, tlsv1 alert internal error)
+
+Если в логах панели видите ошибку:
+```
+Error: Failed to send webhook after 3 retries: write EPROTO ...:error:0A000438:SSL routines:ssl3_read_bytes:tlsv1 alert internal error
+```
+
+**Причины и решения:**
+
+1. **Использование HTTPS для внутренних Docker сервисов**
+   - ❌ **Неправильно:** `WEBHOOK_URL=https://remnawave-admin-bot:8080/webhook`
+   - ✅ **Правильно:** `WEBHOOK_URL=http://remnawave-admin-bot:8080/webhook`
+   - Для сервисов в одной Docker сети всегда используйте HTTP, а не HTTPS
+
+2. **Проблемы с SSL сертификатом на внешнем домене (бот на другом сервере)**
+   
+   ⚠️ **ВАЖНО:** Webhook сервер бота работает **ТОЛЬКО по HTTP**, а не HTTPS!
+   
+   **Если вы указали HTTPS URL в панели, но не настроили reverse proxy:**
+   - ❌ **Неправильно:** `WEBHOOK_URL=https://IP-АДРЕС:8080/webhook` (без reverse proxy)
+   - ✅ **Правильно:** `WEBHOOK_URL=http://IP-АДРЕС:8080/webhook` (используйте HTTP)
+   
+   **Варианты решения:**
+   
+   **Вариант A (проще):** Используйте HTTP для внешнего сервера:
+   ```
+   WEBHOOK_URL=http://IP-АДРЕС-СЕРВЕРА:8080/webhook
+   # или если есть домен:
+   WEBHOOK_URL=http://домен-бота.com:8080/webhook
+   ```
+   ⚠️ Убедитесь, что порт 8080 доступен с сервера панели (firewall, security groups)
+   
+   **Вариант B (безопаснее):** Настройте reverse proxy с HTTPS:
+   - Webhook сервер бота работает по HTTP на порту 8080 (внутри сервера)
+   - Reverse proxy (nginx, traefik, caddy) принимает HTTPS и проксирует на `http://localhost:8080/webhook`
+   - Используйте Let's Encrypt для бесплатного SSL сертификата
+   - Затем используйте: `WEBHOOK_URL=https://домен-бота.com/webhook`
+   
+   **Пример конфигурации nginx для reverse proxy:**
+   ```nginx
+   server {
+       listen 443 ssl http2;
+       server_name ваш-домен.com;
+       
+       # SSL сертификат (Let's Encrypt)
+       ssl_certificate /etc/letsencrypt/live/ваш-домен.com/fullchain.pem;
+       ssl_certificate_key /etc/letsencrypt/live/ваш-домен.com/privkey.pem;
+       
+       location /webhook {
+           proxy_pass http://localhost:8080;
+           proxy_set_header Host $host;
+           proxy_set_header X-Real-IP $remote_addr;
+           proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+           proxy_set_header X-Forwarded-Proto $scheme;
+       }
+   }
+   ```
+   
+   **Пример конфигурации Caddy (Caddyfile):**
+   ```caddy
+   ваш-домен.com {
+       # Вариант 1: Если Caddy и бот в одной Docker сети
+       reverse_proxy /webhook bot:8080
+       
+       # Вариант 2: Если Caddy на хосте, а бот в Docker (порт проброшен)
+       # Используйте 127.0.0.1 вместо localhost, чтобы избежать проблем с IPv6
+       # reverse_proxy /webhook 127.0.0.1:8080
+       
+       # Вариант 3: Если используете имя сервиса из docker-compose.yml
+       # reverse_proxy /webhook remnawave-admin-bot:8080
+   }
+   ```
+   
+   ⚠️ **Важно для Caddy:**
+   - **Если Caddy и бот в одной Docker сети:** используйте имя сервиса `bot:8080` (из docker-compose.yml)
+   - **Если Caddy на хосте, а бот в Docker:** используйте `127.0.0.1:8080` (НЕ `localhost:8080`, чтобы избежать проблем с IPv6)
+   - **Если получаете ошибку `connection refused`:** проверьте, что порт 8080 проброшен на хост в docker-compose.yml
+   - **Если получаете ошибку `no such host`:** убедитесь, что Caddy и бот в одной Docker сети, или используйте IP адрес
+   
+   **Устранение ошибки "connection refused":**
+   - Убедитесь, что бот слушает на `0.0.0.0:8080` (не на `127.0.0.1:8080`)
+   - Проверьте, что порт проброшен: `docker-compose.yml` должен содержать `ports: - "8080:8080"`
+   - Если Caddy в Docker, используйте имя контейнера/сервиса вместо `localhost`
+   - Используйте `127.0.0.1` вместо `localhost` для принудительного использования IPv4
+
+3. **Проверка доступности webhook endpoint**
+   ```bash
+   # Из контейнера панели проверьте доступность:
+   curl http://remnawave-admin-bot:8080/webhook/health
+   # Должен вернуться: {"status":"ok","service":"webhook"}
+   ```
+
+4. **Проверка имени сервиса в Docker**
+   - Убедитесь, что имя сервиса в `WEBHOOK_URL` совпадает с именем сервиса в `docker-compose.yml`
+   - Если сервис называется `bot`, используйте: `http://bot:8080/webhook`
+   - Если сервис называется `remnawave-admin-bot`, используйте: `http://remnawave-admin-bot:8080/webhook`
 
 ### Уведомления не приходят
 
