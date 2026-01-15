@@ -442,6 +442,38 @@ async def _create_user(target: Message | CallbackQuery, data: dict) -> None:
         logger.exception("Failed to send user creation notification")
 
 
+def _get_protocol_type(link: str) -> str:
+    """Определяет тип протокола по ссылке."""
+    if link.startswith("vless://"):
+        return "vless"
+    elif link.startswith("ss://"):
+        return "ss"
+    elif link.startswith("trojan://"):
+        return "trojan"
+    elif link.startswith("vmess://"):
+        return "vmess"
+    elif link.startswith("hysteria://"):
+        return "hysteria"
+    elif link.startswith("tuic://"):
+        return "tuic"
+    else:
+        return "unknown"
+
+
+def _get_protocol_name(protocol_type: str) -> str:
+    """Возвращает название протокола с эмодзи."""
+    protocol_names = {
+        "vless": "🔷 VLESS",
+        "ss": "🔶 SS",
+        "trojan": "🔴 Trojan",
+        "vmess": "🟣 VMess",
+        "hysteria": "🟡 Hysteria",
+        "tuic": "🟢 TUIC",
+        "unknown": "🔗 Link",
+    }
+    return protocol_names.get(protocol_type.lower(), "🔗 Link")
+
+
 def _format_user_edit_snapshot(info: dict, t) -> str:
     """Форматирует снимок данных пользователя для отображения при редактировании."""
     traffic_limit = info.get("trafficLimitBytes")
@@ -1307,13 +1339,25 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
         happ_crypto_link = None
 
         # Получаем подписные ссылки из информации о подписке
+        subscription_data = None
         if short_uuid:
             try:
                 sub_info = await api_client.get_subscription_info(short_uuid)
-                sub_response = sub_info.get("response", {})
-                subscription_links = sub_response.get("links", [])
+                sub_response = sub_info.get("response", sub_info)
+                
+                # Логируем структуру ответа для отладки
+                logger.info("Subscription info API response: type=%s, keys=%s", type(sub_response).__name__, list(sub_response.keys()) if isinstance(sub_response, dict) else "N/A")
+                if isinstance(sub_response, dict):
+                    logger.info("Subscription info content (first 1000 chars): %s", str(sub_response)[:1000])
+                
+                subscription_data = sub_response
+                # Инициализируем список ссылок (будет заполнен при обработке)
+                subscription_links = []
             except Exception:
-                logger.debug("Failed to fetch subscription links for user %s", short_uuid)
+                logger.exception("Failed to fetch subscription links for user %s", short_uuid)
+                subscription_links = []
+        else:
+            subscription_links = []
 
         # Получаем Happ crypto link, если есть subscriptionUrl
         if subscription_url:
@@ -1326,38 +1370,101 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
         # Формируем текст и клавиатуру
         text_lines = [_("user.configs_title")]
 
+        keyboard_rows: list[list[InlineKeyboardButton]] = []
+
+        # Обрабатываем подписные ссылки с группировкой по серверам/нодам
+        if subscription_data and isinstance(subscription_data, dict):
+            # Пробуем получить структурированные данные о конфигах
+            configs_by_node = subscription_data.get("configsByNode", subscription_data.get("nodes", []))
+            links_list = subscription_data.get("links", subscription_data.get("subscriptionLinks", []))
+            
+            # Если есть структурированные данные по нодам
+            if configs_by_node and isinstance(configs_by_node, list):
+                text_lines.append("")
+                text_lines.append(_("user.configs_by_nodes_title"))
+                
+                link_index = 0
+                for node_config in configs_by_node:
+                    if not isinstance(node_config, dict):
+                        continue
+                    
+                    node_name = node_config.get("nodeName", node_config.get("name", "Unknown"))
+                    node_country = node_config.get("countryCode", node_config.get("country", ""))
+                    node_protocols = node_config.get("protocols", node_config.get("links", []))
+                    
+                    # Формируем заголовок для ноды
+                    country_display = f" ({node_country})" if node_country else ""
+                    text_lines.append(f"\n<b>🖥 {_esc(node_name)}{country_display}</b>")
+                    
+                    # Добавляем протоколы для этой ноды
+                    if isinstance(node_protocols, list):
+                        for protocol in node_protocols:
+                            if not isinstance(protocol, dict):
+                                # Если это строка, используем её как ссылку
+                                if isinstance(protocol, str):
+                                    protocol_link = protocol
+                                    protocol_type = _get_protocol_type(protocol_link)
+                                    protocol_name = _get_protocol_name(protocol_type)
+                                    
+                                    text_lines.append(f"   {protocol_name}")
+                                    keyboard_rows.append([
+                                        InlineKeyboardButton(
+                                            text=f"{protocol_name} - {node_name}",
+                                            callback_data=f"user_sub_link:{user_uuid}:{link_index}",
+                                        )
+                                    ])
+                                    # Сохраняем ссылку для последующего отображения
+                                    if link_index < len(subscription_links):
+                                        subscription_links[link_index] = protocol_link
+                                    else:
+                                        subscription_links.append(protocol_link)
+                                    link_index += 1
+                                continue
+                            
+                            # Если это объект с информацией о протоколе
+                            protocol_link = protocol.get("link", protocol.get("url", ""))
+                            protocol_type = protocol.get("type", protocol.get("protocol", ""))
+                            if not protocol_type and protocol_link:
+                                protocol_type = _get_protocol_type(protocol_link)
+                            
+                            if protocol_link:
+                                protocol_name = _get_protocol_name(protocol_type)
+                                text_lines.append(f"   {protocol_name}")
+                                keyboard_rows.append([
+                                    InlineKeyboardButton(
+                                        text=f"{protocol_name} - {node_name}",
+                                        callback_data=f"user_sub_link:{user_uuid}:{link_index}",
+                                    )
+                                ])
+                                # Сохраняем ссылку для последующего отображения
+                                if link_index < len(subscription_links):
+                                    subscription_links[link_index] = protocol_link
+                                else:
+                                    subscription_links.append(protocol_link)
+                                link_index += 1
+            # Если есть просто список ссылок
+            elif links_list and isinstance(links_list, list):
+                text_lines.append("")
+                text_lines.append(_("user.subscription_links_title"))
+                for i, link in enumerate(links_list[:20]):  # Увеличиваем лимит до 20 ссылок
+                    if not isinstance(link, str):
+                        continue
+                    
+                    protocol_type = _get_protocol_type(link)
+                    protocol_name = _get_protocol_name(protocol_type)
+                    text_lines.append(f"   {protocol_name} {i+1}")
+                    
+                    keyboard_rows.append([
+                        InlineKeyboardButton(
+                            text=f"{protocol_name} {i+1}",
+                            callback_data=f"user_sub_link:{user_uuid}:{i}",
+                        )
+                    ])
+                    subscription_links.append(link)
+
         if not subscription_links and not happ_crypto_link:
             text_lines.append("")
             text_lines.append(_("user.no_subscription_links"))
-
-        keyboard_rows: list[list[InlineKeyboardButton]] = []
-
-        # Добавляем кнопки для подписных ссылок
-        if subscription_links:
-            text_lines.append("")
-            text_lines.append(_("user.subscription_links_title"))
-            for i, link in enumerate(subscription_links[:10]):  # Ограничиваем до 10 ссылок
-                # Определяем тип ссылки по префиксу для текста кнопки
-                if link.startswith("vless://"):
-                    button_text = f"🔷 VLESS {i+1}"
-                elif link.startswith("ss://"):
-                    button_text = f"🔶 SS {i+1}"
-                elif link.startswith("trojan://"):
-                    button_text = f"🔴 Trojan {i+1}"
-                elif link.startswith("vmess://"):
-                    button_text = f"🟣 VMess {i+1}"
-                else:
-                    button_text = f"🔗 Link {i+1}"
-
-                # Используем callback кнопку, так как Telegram не поддерживает нестандартные протоколы в URL
-                keyboard_rows.append(
-                    [
-                        InlineKeyboardButton(
-                            text=button_text,
-                            callback_data=f"user_sub_link:{user_uuid}:{i}",
-                        )
-                    ]
-                )
 
         # Добавляем кнопку для Happ crypto link
         if happ_crypto_link:
@@ -1420,8 +1527,31 @@ async def cb_user_sub_link(callback: CallbackQuery) -> None:
 
         # Получаем подписные ссылки
         sub_info = await api_client.get_subscription_info(short_uuid)
-        sub_response = sub_info.get("response", {})
-        subscription_links = sub_response.get("links", [])
+        sub_response = sub_info.get("response", sub_info)
+        
+        # Собираем все ссылки из структурированных данных
+        subscription_links = []
+        configs_by_node = sub_response.get("configsByNode", sub_response.get("nodes", []))
+        links_list = sub_response.get("links", sub_response.get("subscriptionLinks", []))
+        
+        # Если есть структурированные данные по нодам
+        if configs_by_node and isinstance(configs_by_node, list):
+            for node_config in configs_by_node:
+                if not isinstance(node_config, dict):
+                    continue
+                node_protocols = node_config.get("protocols", node_config.get("links", []))
+                if isinstance(node_protocols, list):
+                    for protocol in node_protocols:
+                        if isinstance(protocol, str):
+                            subscription_links.append(protocol)
+                        elif isinstance(protocol, dict):
+                            protocol_link = protocol.get("link", protocol.get("url", ""))
+                            if protocol_link:
+                                subscription_links.append(protocol_link)
+        
+        # Если есть просто список ссылок
+        if not subscription_links and links_list and isinstance(links_list, list):
+            subscription_links = [link for link in links_list if isinstance(link, str)]
 
         if link_index >= len(subscription_links):
             await callback.message.edit_text(_("user.link_not_found"), reply_markup=nav_keyboard(back_to))
@@ -1430,16 +1560,8 @@ async def cb_user_sub_link(callback: CallbackQuery) -> None:
         link = subscription_links[link_index]
 
         # Определяем тип ссылки для заголовка
-        if link.startswith("vless://"):
-            link_type = "🔷 VLESS"
-        elif link.startswith("ss://"):
-            link_type = "🔶 SS"
-        elif link.startswith("trojan://"):
-            link_type = "🔴 Trojan"
-        elif link.startswith("vmess://"):
-            link_type = "🟣 VMess"
-        else:
-            link_type = "🔗 Link"
+        protocol_type = _get_protocol_type(link)
+        link_type = _get_protocol_name(protocol_type)
 
         # Отображаем ссылку
         text = f"{link_type}\n\n<code>{_esc(link)}</code>"

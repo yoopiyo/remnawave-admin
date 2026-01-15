@@ -105,6 +105,7 @@
     "summary": "👤 <code>{username}</code>\n{statusEmoji} Status: {status}\n💬 TG ID: <code>{telegramId}</code>\n🔗 Subscription: {subscriptionUrl}\n\n🆔 UUID: <code>{uuid}</code>\n🔖 Short: <code>{shortUuid}</code>\n\n📶 Traffic: {used} / {limit}\n⏳ Expires: {expire}\n💻 HWID: {hwid}\n📳 Last online: {online}\n📅 Created: {created}",
     "configs_button": "🧩 Configs",
     "configs_title": "🧩 User subscription links",
+    "configs_by_nodes_title": "🖥 Configurations by servers:",
     "subscription_links_title": "🔗 Subscription links:",
     "happ_crypto_link_title": "🔐 Happ encrypted link:",
     "happ_crypto_link_button": "🔐 Happ Crypto Link",
