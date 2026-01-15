@@ -551,7 +551,8 @@ async def cb_stats_traffic_period(callback: CallbackQuery) -> None:
         now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Используем тот же формат, что и для статистики пользователя
+        # Используем тот же формат ISO 8601 с Z, что и для статистики пользователя
+        # Если это не работает, возможно API ожидает формат только с датой (YYYY-MM-DD)
         if period == "today":
             start = today_start.isoformat() + "Z"
             end = now.isoformat() + "Z"
