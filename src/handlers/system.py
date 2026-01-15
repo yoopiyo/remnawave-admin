@@ -479,12 +479,17 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
         # API возвращает массив напрямую в response
         nodes_usage = data.get("response", [])
 
+        # Для отображения: если формат только дата (YYYY-MM-DD), показываем как есть
+        # Если формат с временем, используем format_datetime
+        start_display = start if len(start) == 10 else format_datetime(start.replace("Z", "+00:00"))
+        end_display = end if len(end) == 10 else format_datetime(end.replace("Z", "+00:00"))
+        
         lines = [
             f"*{_('stats.traffic_title')}*",
             "",
             _("stats.traffic_period").format(
-                start=format_datetime(start.replace("Z", "+00:00")),
-                end=format_datetime(end.replace("Z", "+00:00")),
+                start=start_display,
+                end=end_display,
             ),
         ]
 
@@ -547,27 +552,30 @@ async def cb_stats_traffic_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
 
         now = datetime.utcnow()
-        # Убираем микросекунды для совместимости с API (как в users.py)
+        # Убираем микросекунды для совместимости с API
         now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # Используем тот же формат ISO 8601 с Z, что и для статистики пользователя
-        # Если это не работает, возможно API ожидает формат только с датой (YYYY-MM-DD)
+        # API для /api/bandwidth-stats/nodes ожидает формат только с датой (YYYY-MM-DD)
+        # Без времени и timezone
+        def format_date_only(dt: datetime) -> str:
+            return dt.strftime("%Y-%m-%d")
+
         if period == "today":
-            start = today_start.isoformat() + "Z"
-            end = now.isoformat() + "Z"
+            start = format_date_only(today_start)
+            end = format_date_only(now)
         elif period == "week":
-            start = (today_start - timedelta(days=7)).isoformat() + "Z"
-            end = now.isoformat() + "Z"
+            start = format_date_only(today_start - timedelta(days=7))
+            end = format_date_only(now)
         elif period == "month":
-            start = (today_start - timedelta(days=30)).isoformat() + "Z"
-            end = now.isoformat() + "Z"
+            start = format_date_only(today_start - timedelta(days=30))
+            end = format_date_only(now)
         elif period == "3months":
-            start = (today_start - timedelta(days=90)).isoformat() + "Z"
-            end = now.isoformat() + "Z"
+            start = format_date_only(today_start - timedelta(days=90))
+            end = format_date_only(now)
         elif period == "year":
-            start = (today_start - timedelta(days=365)).isoformat() + "Z"
-            end = now.isoformat() + "Z"
+            start = format_date_only(today_start - timedelta(days=365))
+            end = format_date_only(now)
         else:
             await callback.answer(_("errors.generic"), show_alert=True)
             return
