@@ -232,23 +232,32 @@ async def _handle_user_event(bot: Bot, event: str, event_data: dict) -> None:
         return
     
     # Определяем действие для уведомления на основе официальных событий
+    # Специальные события обрабатываем отдельно
+    special_events = {
+        "user.expired": "expired",
+        "user.expires_in_72_hours": "expires_in_72h",
+        "user.expires_in_48_hours": "expires_in_48h",
+        "user.expires_in_24_hours": "expires_in_24h",
+        "user.expired_24_hours_ago": "expired_24h_ago",
+        "user.revoked": "revoked",
+        "user.disabled": "disabled",
+        "user.enabled": "enabled",
+        "user.limited": "limited",
+        "user.traffic_reset": "traffic_reset",
+        "user.first_connected": "first_connected",
+        "user.bandwidth_usage_threshold_reached": "bandwidth_threshold",
+        "user.not_connected": "not_connected",
+    }
+    
     if event == "user.created":
         action = "created"
     elif event == "user.modified":
         action = "updated"
     elif event == "user.deleted":
         action = "deleted"
-    elif event in (
-        "user.revoked", "user.disabled", "user.enabled", "user.limited", 
-        "user.expired", "user.traffic_reset",
-        "user.expires_in_72_hours", "user.expires_in_48_hours", "user.expires_in_24_hours",
-        "user.expired_24_hours_ago", "user.first_connected",
-        "user.bandwidth_usage_threshold_reached", "user.not_connected"
-    ):
-        # Все эти события обрабатываем как обновления
-        action = "updated"
+    elif event in special_events:
+        action = special_events[event]
     else:
-        # Для любых других событий пользователей
         action = "updated"
     
     # Нормализуем структуру данных пользователя
@@ -258,8 +267,9 @@ async def _handle_user_event(bot: Bot, event: str, event_data: dict) -> None:
         user_data = event_data
     
     logger.info(
-        "Sending user notification event=%s user_uuid=%s",
+        "Sending user notification event=%s action=%s user_uuid=%s",
         event,
+        action,
         user_uuid
     )
     
@@ -268,6 +278,7 @@ async def _handle_user_event(bot: Bot, event: str, event_data: dict) -> None:
         action=action,
         user_info=user_data,
         old_user_info=None,
+        event_type=event,  # Передаем оригинальный тип события
     )
 
 
