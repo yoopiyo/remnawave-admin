@@ -1618,39 +1618,43 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                 
                 for node in accessible_nodes:
                     if not isinstance(node, dict):
+                        logger.debug("Skipping non-dict node: %s", type(node))
                         continue
                     
                     # В accessible-nodes используется nodeName, а не name
                     node_name = node.get("nodeName", node.get("name", "Unknown"))
                     node_country = node.get("countryCode", node.get("country", ""))
                     node_uuid = node.get("uuid", "")
+                    logger.info("Processing accessible node: name=%s, uuid=%s, country=%s", node_name, node_uuid, node_country)
                     
                     # Получаем адрес и порт из хоста через ноду
                     node_info = nodes_dict.get(node_uuid)
                     if not node_info:
-                        logger.debug("Node info not found for uuid %s", node_uuid)
+                        logger.warning("Node info not found for uuid %s (node: %s). Available node UUIDs: %s", node_uuid, node_name, list(nodes_dict.keys())[:5])
                         continue
                     
                     host_uuid = node_info.get("hostUuid")
                     if not host_uuid:
-                        logger.debug("Host UUID not found for node %s", node_name)
+                        logger.warning("Host UUID not found for node %s (uuid: %s)", node_name, node_uuid)
                         continue
                     
                     host = hosts_dict.get(host_uuid)
                     if not host:
-                        logger.debug("Host not found for uuid %s", host_uuid)
+                        logger.warning("Host not found for uuid %s (node: %s). Available host UUIDs: %s", host_uuid, node_name, list(hosts_dict.keys())[:5])
                         continue
                     
                     node_address = host.get("address", "")
                     node_port = host.get("port")
+                    logger.info("Node %s: address=%s, port=%s", node_name, node_address, node_port)
                     
                     # Пропускаем ноды без адреса или порта
                     if not node_address or not node_port:
-                        logger.debug("Node %s missing address or port: address=%s, port=%s", node_name, node_address, node_port)
+                        logger.warning("Node %s missing address or port: address=%s, port=%s", node_name, node_address, node_port)
                         continue
                     
                     country_display = f" ({node_country})" if node_country else ""
                     text_lines.append(f"\n<b>🖥 {_esc(node_name)}{country_display}</b>")
+                    logger.info("Adding configs for node %s: vless=%s, trojan=%s, ss=%s", node_name, bool(vless_uuid), bool(trojan_password), bool(ss_password))
                     
                     # Формируем ссылки для доступных протоколов
                     # VLESS
@@ -1664,6 +1668,7 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                             )
                         ])
                         subscription_links.append(vless_link)
+                        logger.info("Added VLESS link for node %s, link_index=%s, total_links=%s", node_name, link_index, len(subscription_links))
                         link_index += 1
                     
                     # Trojan
@@ -1677,6 +1682,7 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                             )
                         ])
                         subscription_links.append(trojan_link)
+                        logger.info("Added Trojan link for node %s, link_index=%s, total_links=%s", node_name, link_index, len(subscription_links))
                         link_index += 1
                     
                     # SS
@@ -1692,6 +1698,7 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                             )
                         ])
                         subscription_links.append(ss_link)
+                        logger.info("Added SS link for node %s, link_index=%s, total_links=%s", node_name, link_index, len(subscription_links))
                         link_index += 1
 
         # Если конфигов нет, но есть доступные ноды, пробуем получить все ноды и сформировать конфиги
