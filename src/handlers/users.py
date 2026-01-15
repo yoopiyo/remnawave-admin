@@ -1634,7 +1634,8 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:{user_uuid}")],
-                    nav_row(back_to),
+                    [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                    [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                 ]
             )
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -1669,7 +1670,8 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
                         ),
                     ],
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:{user_uuid}")],
-                    nav_row(back_to),
+                    [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                    [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                 ]
             )
             await callback.message.edit_text(_("user.stats.select_period"), reply_markup=keyboard)
@@ -1704,7 +1706,8 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
                         ),
                     ],
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:nodes:{user_uuid}")],
-                    nav_row(back_to),
+                    [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                    [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                 ]
             )
             await callback.message.edit_text(_("user.stats.select_period"), reply_markup=keyboard)
@@ -1739,7 +1742,8 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:{user_uuid}")],
-                    nav_row(back_to),
+                    [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                    [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                 ]
             )
             await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -1931,7 +1935,8 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:traffic:{user_uuid}")],
-                        nav_row(back_to),
+                        [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                        [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                     ]
                 ),
             )
@@ -1983,7 +1988,8 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:traffic:{user_uuid}")],
-                nav_row(back_to),
+                [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
             ]
         )
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
@@ -2025,7 +2031,8 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
             keyboard = InlineKeyboardMarkup(
                 inline_keyboard=[
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:nodes:{user_uuid}")],
-                    nav_row(back_to),
+                    [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                    [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                 ]
             )
             await callback.message.edit_text(text, reply_markup=keyboard)
@@ -2061,7 +2068,8 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
                 reply_markup=InlineKeyboardMarkup(
                     inline_keyboard=[
                         [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:nodes:{user_uuid}")],
-                        nav_row(back_to),
+                        [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                        [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
                     ]
                 ),
             )
@@ -2131,7 +2139,8 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
         keyboard = InlineKeyboardMarkup(
             inline_keyboard=[
                 [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:nodes:{user_uuid}")],
-                nav_row(back_to),
+                [InlineKeyboardButton(text=_("actions.back"), callback_data=f"user:{user_uuid}")],
+                [InlineKeyboardButton(text=_("actions.main_menu"), callback_data="nav:home")],
             ]
         )
         await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
