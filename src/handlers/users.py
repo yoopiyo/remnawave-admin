@@ -1866,37 +1866,104 @@ async def cb_user_sub_link(callback: CallbackQuery) -> None:
         user_info = user.get("response", user)
         short_uuid = user_info.get("shortUuid")
 
-        if not short_uuid:
-            await callback.message.edit_text(_("user.no_subscription_url"), reply_markup=nav_keyboard(back_to))
-            return
-
-        # Получаем подписные ссылки
-        sub_info = await api_client.get_subscription_info(short_uuid)
-        sub_response = sub_info.get("response", sub_info)
-        
-        # Собираем все ссылки из структурированных данных
+        # Собираем все ссылки (как в cb_user_configs)
         subscription_links = []
-        configs_by_node = sub_response.get("configsByNode", sub_response.get("nodes", []))
-        links_list = sub_response.get("links", sub_response.get("subscriptionLinks", []))
         
-        # Если есть структурированные данные по нодам
-        if configs_by_node and isinstance(configs_by_node, list):
-            for node_config in configs_by_node:
-                if not isinstance(node_config, dict):
-                    continue
-                node_protocols = node_config.get("protocols", node_config.get("links", []))
-                if isinstance(node_protocols, list):
-                    for protocol in node_protocols:
-                        if isinstance(protocol, str):
-                            subscription_links.append(protocol)
-                        elif isinstance(protocol, dict):
-                            protocol_link = protocol.get("link", protocol.get("url", ""))
-                            if protocol_link:
-                                subscription_links.append(protocol_link)
+        # Получаем подписные ссылки из информации о подписке
+        if short_uuid:
+            try:
+                sub_info = await api_client.get_subscription_info(short_uuid)
+                sub_response = sub_info.get("response", sub_info)
+                
+                configs_by_node = sub_response.get("configsByNode", sub_response.get("nodes", []))
+                links_list = sub_response.get("links", sub_response.get("subscriptionLinks", []))
+                ss_conf_links = sub_response.get("ssConfLinks", {})
+                
+                # Обрабатываем ssConfLinks
+                if ss_conf_links and isinstance(ss_conf_links, dict) and ss_conf_links:
+                    for key, value in ss_conf_links.items():
+                        if isinstance(value, list):
+                            subscription_links.extend([link for link in value if isinstance(link, str)])
+                        elif isinstance(value, dict):
+                            protocols = value.get("protocols", value.get("links", []))
+                            if isinstance(protocols, list):
+                                for protocol in protocols:
+                                    if isinstance(protocol, str):
+                                        subscription_links.append(protocol)
+                                    elif isinstance(protocol, dict):
+                                        protocol_link = protocol.get("link", protocol.get("url", ""))
+                                        if protocol_link:
+                                            subscription_links.append(protocol_link)
+                
+                # Обрабатываем configs_by_node
+                if configs_by_node and isinstance(configs_by_node, list):
+                    for node_config in configs_by_node:
+                        if not isinstance(node_config, dict):
+                            continue
+                        node_protocols = node_config.get("protocols", node_config.get("links", []))
+                        if isinstance(node_protocols, list):
+                            for protocol in node_protocols:
+                                if isinstance(protocol, str):
+                                    subscription_links.append(protocol)
+                                elif isinstance(protocol, dict):
+                                    protocol_link = protocol.get("link", protocol.get("url", ""))
+                                    if protocol_link:
+                                        subscription_links.append(protocol_link)
+                
+                # Обрабатываем links_list
+                if links_list and isinstance(links_list, list):
+                    subscription_links.extend([link for link in links_list if isinstance(link, str)])
+            except Exception:
+                logger.exception("Failed to fetch subscription links for user %s", short_uuid)
         
-        # Если есть просто список ссылок
-        if not subscription_links and links_list and isinstance(links_list, list):
-            subscription_links = [link for link in links_list if isinstance(link, str)]
+        # Если ссылок нет, генерируем из доступных нод (как в cb_user_configs)
+        if not subscription_links:
+            try:
+                nodes_data = await api_client.get_user_accessible_nodes(user_uuid)
+                nodes_response = nodes_data.get("response", nodes_data)
+                accessible_nodes = nodes_response.get("activeNodes", []) if isinstance(nodes_response, dict) else []
+                
+                if accessible_nodes and isinstance(accessible_nodes, list):
+                    # Получаем все ноды для получения адресов и портов
+                    all_nodes_data = await api_client.get_nodes()
+                    all_nodes = all_nodes_data.get("response", [])
+                    nodes_dict = {n.get("uuid"): n for n in all_nodes if isinstance(n, dict)}
+                    
+                    vless_uuid = user_info.get("vlessUuid")
+                    trojan_password = user_info.get("trojanPassword")
+                    ss_password = user_info.get("ssPassword")
+                    
+                    for node in accessible_nodes:
+                        if not isinstance(node, dict):
+                            continue
+                        
+                        node_uuid = node.get("uuid", "")
+                        node_info = nodes_dict.get(node_uuid)
+                        if not node_info:
+                            continue
+                        
+                        node_address = node_info.get("address", "")
+                        node_port = node_info.get("port")
+                        
+                        if not node_address or not node_port:
+                            continue
+                        
+                        # Генерируем ссылки для доступных протоколов
+                        if vless_uuid:
+                            vless_link = f"vless://{vless_uuid}@{node_address}:{node_port}?type=tcp&security=none#VLESS"
+                            subscription_links.append(vless_link)
+                        
+                        if trojan_password:
+                            trojan_link = f"trojan://{trojan_password}@{node_address}:{node_port}?type=tcp#Trojan"
+                            subscription_links.append(trojan_link)
+                        
+                        if ss_password:
+                            ss_method = "aes-256-gcm"
+                            ss_encoded = base64.b64encode(f"{ss_method}:{ss_password}@{node_address}:{node_port}".encode()).decode()
+                            ss_link = f"ss://{ss_encoded}#SS"
+                            subscription_links.append(ss_link)
+            except Exception:
+                logger.exception("Failed to generate links from accessible nodes")
 
         if link_index >= len(subscription_links):
             await callback.message.edit_text(_("user.link_not_found"), reply_markup=nav_keyboard(back_to))
