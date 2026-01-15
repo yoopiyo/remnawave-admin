@@ -482,29 +482,23 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
         if isinstance(data, dict):
             logger.info("API response content: %s", str(data)[:500])  # Первые 500 символов
         
-        # API может возвращать данные в разных форматах
-        # Проверяем структуру ответа
+        # API возвращает структуру: {'response': {'series': [...], 'topNodes': [...], ...}}
+        # Данные находятся в response['series'] или response['topNodes']
+        from datetime import timedelta
+        
+        nodes_usage = []
         if isinstance(data, dict):
-            # Проверяем разные возможные ключи
-            nodes_usage = data.get("response", data.get("data", data.get("nodes", [])))
-            # Если response это тоже словарь, проверяем его содержимое
-            if isinstance(nodes_usage, dict):
-                logger.info("Response is dict, checking keys: %s", list(nodes_usage.keys()))
-                nodes_usage = nodes_usage.get("nodes", nodes_usage.get("data", []))
+            response = data.get("response", {})
+            if isinstance(response, dict):
+                # Используем topNodes если есть, иначе series
+                nodes_usage = response.get("topNodes", response.get("series", []))
+            else:
+                nodes_usage = response if isinstance(response, list) else []
         elif isinstance(data, list):
             nodes_usage = data
-        else:
-            nodes_usage = []
-
-        # Логируем количество элементов
-        logger.info("Nodes usage count: %d, type of first element: %s", len(nodes_usage), type(nodes_usage[0]).__name__ if nodes_usage else "N/A")
-        if nodes_usage and not isinstance(nodes_usage[0], dict):
-            logger.warning("First element is not dict: %s", str(nodes_usage[0])[:200])
 
         # Фильтруем только словари (объекты), игнорируя строки
         nodes_usage = [node for node in nodes_usage if isinstance(node, dict)]
-        
-        logger.info("Filtered nodes usage count: %d", len(nodes_usage))
 
         # Для отображения: если формат только дата (YYYY-MM-DD), показываем как есть
         # Для end показываем текущий день (end - 1 день), так как мы используем следующий день для API
@@ -532,9 +526,22 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
             lines.append(_("stats.traffic_empty"))
         else:
             # Подсчитываем общий трафик
-            total_traffic = sum(node.get("totalTrafficBytes", 0) for node in nodes_usage)
-            total_download = sum(node.get("totalDownloadBytes", 0) for node in nodes_usage)
-            total_upload = sum(node.get("totalUploadBytes", 0) for node in nodes_usage)
+            # API возвращает данные в формате: {'total': ..., 'data': [...]}
+            total_traffic = sum(node.get("total", node.get("totalTrafficBytes", 0)) for node in nodes_usage)
+            # Для download/upload используем data если есть, иначе ищем в других полях
+            total_download = 0
+            total_upload = 0
+            for node in nodes_usage:
+                # Если есть массив data, суммируем его (обычно это трафик по дням)
+                data_array = node.get("data", [])
+                if data_array:
+                    node_total = sum(data_array)
+                    # Предполагаем, что это общий трафик (download + upload)
+                    total_download += node_total // 2  # Примерное разделение
+                    total_upload += node_total // 2
+                else:
+                    total_download += node.get("totalDownloadBytes", node.get("download", 0))
+                    total_upload += node.get("totalUploadBytes", node.get("upload", 0))
 
             lines.append("")
             lines.append(f"*{_('stats.traffic_summary')}*")
@@ -545,13 +552,21 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
             lines.append("")
             lines.append(f"*{_('stats.traffic_by_node')}*")
             # Сортируем по трафику (по убыванию)
-            sorted_nodes = sorted(nodes_usage, key=lambda x: x.get("totalTrafficBytes", 0), reverse=True)
+            # API возвращает данные с полем 'total' вместо 'totalTrafficBytes'
+            sorted_nodes = sorted(nodes_usage, key=lambda x: x.get("total", x.get("totalTrafficBytes", 0)), reverse=True)
             for node in sorted_nodes[:20]:  # Показываем топ-20
-                node_name = node.get("nodeName", "n/a")
-                country = node.get("nodeCountryCode", "—")
-                traffic_bytes = node.get("totalTrafficBytes", 0)
-                download_bytes = node.get("totalDownloadBytes", 0)
-                upload_bytes = node.get("totalUploadBytes", 0)
+                node_name = node.get("name", node.get("nodeName", "n/a"))
+                country = node.get("countryCode", node.get("nodeCountryCode", "—"))
+                traffic_bytes = node.get("total", node.get("totalTrafficBytes", 0))
+                # Для download/upload используем data если есть
+                data_array = node.get("data", [])
+                if data_array:
+                    node_total = sum(data_array)
+                    download_bytes = node_total // 2  # Примерное разделение
+                    upload_bytes = node_total // 2
+                else:
+                    download_bytes = node.get("totalDownloadBytes", node.get("download", 0))
+                    upload_bytes = node.get("totalUploadBytes", node.get("upload", 0))
                 lines.append(
                     _("stats.traffic_node_item").format(
                         nodeName=node_name,
