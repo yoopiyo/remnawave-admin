@@ -476,8 +476,17 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
     """Получает статистику трафика за период."""
     try:
         data = await api_client.get_nodes_usage_range(start, end, top_nodes_limit=20)
-        # API возвращает массив напрямую в response
-        nodes_usage = data.get("response", [])
+        # API может возвращать данные в разных форматах
+        # Проверяем структуру ответа
+        if isinstance(data, dict):
+            nodes_usage = data.get("response", [])
+        elif isinstance(data, list):
+            nodes_usage = data
+        else:
+            nodes_usage = []
+
+        # Фильтруем только словари (объекты), игнорируя строки
+        nodes_usage = [node for node in nodes_usage if isinstance(node, dict)]
 
         # Для отображения: если формат только дата (YYYY-MM-DD), показываем как есть
         # Если формат с временем, используем format_datetime
