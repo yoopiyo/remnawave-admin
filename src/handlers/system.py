@@ -476,22 +476,47 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
     """Получает статистику трафика за период."""
     try:
         data = await api_client.get_nodes_usage_range(start, end, top_nodes_limit=20)
+        
+        # Логируем структуру ответа для отладки
+        logger.info("API response for traffic stats: type=%s, keys=%s", type(data).__name__, list(data.keys()) if isinstance(data, dict) else "N/A")
+        if isinstance(data, dict):
+            logger.info("API response content: %s", str(data)[:500])  # Первые 500 символов
+        
         # API может возвращать данные в разных форматах
         # Проверяем структуру ответа
         if isinstance(data, dict):
-            nodes_usage = data.get("response", [])
+            # Проверяем разные возможные ключи
+            nodes_usage = data.get("response", data.get("data", data.get("nodes", [])))
+            # Если response это тоже словарь, проверяем его содержимое
+            if isinstance(nodes_usage, dict):
+                logger.info("Response is dict, checking keys: %s", list(nodes_usage.keys()))
+                nodes_usage = nodes_usage.get("nodes", nodes_usage.get("data", []))
         elif isinstance(data, list):
             nodes_usage = data
         else:
             nodes_usage = []
 
+        # Логируем количество элементов
+        logger.info("Nodes usage count: %d, type of first element: %s", len(nodes_usage), type(nodes_usage[0]).__name__ if nodes_usage else "N/A")
+        if nodes_usage and not isinstance(nodes_usage[0], dict):
+            logger.warning("First element is not dict: %s", str(nodes_usage[0])[:200])
+
         # Фильтруем только словари (объекты), игнорируя строки
         nodes_usage = [node for node in nodes_usage if isinstance(node, dict)]
+        
+        logger.info("Filtered nodes usage count: %d", len(nodes_usage))
 
         # Для отображения: если формат только дата (YYYY-MM-DD), показываем как есть
-        # Если формат с временем, используем format_datetime
+        # Для end показываем текущий день (end - 1 день), так как мы используем следующий день для API
+        if len(end) == 10:
+            # end это следующий день для API, для отображения показываем текущий день
+            from datetime import datetime as dt
+            end_date = dt.strptime(end, "%Y-%m-%d")
+            end_display = (end_date - timedelta(days=1)).strftime("%Y-%m-%d")
+        else:
+            end_display = format_datetime(end.replace("Z", "+00:00"))
+        
         start_display = start if len(start) == 10 else format_datetime(start.replace("Z", "+00:00"))
-        end_display = end if len(end) == 10 else format_datetime(end.replace("Z", "+00:00"))
         
         lines = [
             f"*{_('stats.traffic_title')}*",
