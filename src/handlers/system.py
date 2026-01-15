@@ -483,8 +483,8 @@ async def _fetch_traffic_stats_text(start: str, end: str) -> str:
             f"*{_('stats.traffic_title')}*",
             "",
             _("stats.traffic_period").format(
-                start=format_datetime(start + "+00:00"),
-                end=format_datetime(end + "+00:00"),
+                start=format_datetime(start.replace("Z", "+00:00")),
+                end=format_datetime(end.replace("Z", "+00:00")),
             ),
         ]
 
@@ -547,30 +547,26 @@ async def cb_stats_traffic_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
 
         now = datetime.utcnow()
-        # Убираем микросекунды для совместимости с API
+        # Убираем микросекунды для совместимости с API (как в users.py)
         now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
-        # API для статистики нод ожидает формат без timezone
-        # Используем strftime для явного форматирования
-        def format_date(dt: datetime) -> str:
-            return dt.strftime("%Y-%m-%dT%H:%M:%S")
-
+        # Используем тот же формат, что и для статистики пользователя
         if period == "today":
-            start = format_date(today_start)
-            end = format_date(now)
+            start = today_start.isoformat() + "Z"
+            end = now.isoformat() + "Z"
         elif period == "week":
-            start = format_date(today_start - timedelta(days=7))
-            end = format_date(now)
+            start = (today_start - timedelta(days=7)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
         elif period == "month":
-            start = format_date(today_start - timedelta(days=30))
-            end = format_date(now)
+            start = (today_start - timedelta(days=30)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
         elif period == "3months":
-            start = format_date(today_start - timedelta(days=90))
-            end = format_date(now)
+            start = (today_start - timedelta(days=90)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
         elif period == "year":
-            start = format_date(today_start - timedelta(days=365))
-            end = format_date(now)
+            start = (today_start - timedelta(days=365)).isoformat() + "Z"
+            end = now.isoformat() + "Z"
         else:
             await callback.answer(_("errors.generic"), show_alert=True)
             return
