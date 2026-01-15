@@ -547,6 +547,8 @@ async def cb_stats_traffic_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
 
         now = datetime.utcnow()
+        # Убираем микросекунды для совместимости с API
+        now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         if period == "today":

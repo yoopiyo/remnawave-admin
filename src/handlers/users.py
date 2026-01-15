@@ -1651,21 +1651,21 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
                     [
                         InlineKeyboardButton(
                             text=_("user.stats.period_today"),
-                            callback_data=f"user_stats:traffic_period:{user_uuid}:today",
+                            callback_data=f"ust:t:{user_uuid}:today",
                         ),
                         InlineKeyboardButton(
                             text=_("user.stats.period_week"),
-                            callback_data=f"user_stats:traffic_period:{user_uuid}:week",
+                            callback_data=f"ust:t:{user_uuid}:week",
                         ),
                     ],
                     [
                         InlineKeyboardButton(
                             text=_("user.stats.period_month"),
-                            callback_data=f"user_stats:traffic_period:{user_uuid}:month",
+                            callback_data=f"ust:t:{user_uuid}:month",
                         ),
                         InlineKeyboardButton(
                             text=_("user.stats.period_custom"),
-                            callback_data=f"user_stats:traffic_period:{user_uuid}:custom",
+                            callback_data=f"ust:t:{user_uuid}:custom",
                         ),
                     ],
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:{user_uuid}")],
@@ -1686,21 +1686,21 @@ async def cb_user_stats(callback: CallbackQuery) -> None:
                     [
                         InlineKeyboardButton(
                             text=_("user.stats.period_today"),
-                            callback_data=f"user_stats:nodes_period:{user_uuid}:today",
+                            callback_data=f"ust:n:{user_uuid}:today",
                         ),
                         InlineKeyboardButton(
                             text=_("user.stats.period_week"),
-                            callback_data=f"user_stats:nodes_period:{user_uuid}:week",
+                            callback_data=f"ust:n:{user_uuid}:week",
                         ),
                     ],
                     [
                         InlineKeyboardButton(
                             text=_("user.stats.period_month"),
-                            callback_data=f"user_stats:nodes_period:{user_uuid}:month",
+                            callback_data=f"ust:n:{user_uuid}:month",
                         ),
                         InlineKeyboardButton(
                             text=_("user.stats.period_custom"),
-                            callback_data=f"user_stats:nodes_period:{user_uuid}:custom",
+                            callback_data=f"ust:n:{user_uuid}:custom",
                         ),
                     ],
                     [InlineKeyboardButton(text=_("user.back_to_stats"), callback_data=f"user_stats:nodes:{user_uuid}")],
@@ -1790,6 +1790,8 @@ async def cb_user_traffic_nodes_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
         
         now = datetime.utcnow()
+        # Убираем микросекунды для совместимости с API
+        now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
         
         if period == "today":
@@ -1863,7 +1865,7 @@ async def cb_user_traffic_nodes_period(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 
-@router.callback_query(F.data.startswith("user_stats:traffic_period:"))
+@router.callback_query(F.data.startswith("ust:t:"))
 async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
     """Обработчик выбора периода для статистики трафика."""
     if await _not_admin(callback):
@@ -1881,6 +1883,8 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
 
         now = datetime.utcnow()
+        # Убираем микросекунды для совместимости с API
+        now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         if period == "today":
@@ -1961,7 +1965,7 @@ async def cb_user_stats_traffic_period(callback: CallbackQuery) -> None:
         await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
 
 
-@router.callback_query(F.data.startswith("user_stats:nodes_period:"))
+@router.callback_query(F.data.startswith("ust:n:"))
 async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
     """Обработчик выбора периода для использования нод."""
     if await _not_admin(callback):
@@ -1999,6 +2003,8 @@ async def cb_user_stats_nodes_period(callback: CallbackQuery) -> None:
         from datetime import datetime, timedelta
 
         now = datetime.utcnow()
+        # Убираем микросекунды для совместимости с API
+        now = now.replace(microsecond=0)
         today_start = now.replace(hour=0, minute=0, second=0, microsecond=0)
 
         if period == "today":
