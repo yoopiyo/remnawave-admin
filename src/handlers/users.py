@@ -1394,7 +1394,8 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
             logger.info("Accessible nodes API response: type=%s, keys=%s", type(nodes_response).__name__, list(nodes_response.keys()) if isinstance(nodes_response, dict) else "N/A")
             if isinstance(nodes_response, dict):
                 logger.info("Accessible nodes content (first 1000 chars): %s", str(nodes_response)[:1000])
-                accessible_nodes = nodes_response.get("nodes", nodes_response.get("data", []))
+                # API возвращает activeNodes, а не nodes
+                accessible_nodes = nodes_response.get("activeNodes", nodes_response.get("nodes", nodes_response.get("data", [])))
             elif isinstance(nodes_response, list):
                 accessible_nodes = nodes_response
             else:
@@ -1586,6 +1587,25 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
             # Если конфигов нет в subscription_data, но есть доступные ноды, формируем конфиги на основе нод
             if not subscription_links and accessible_nodes and isinstance(accessible_nodes, list) and len(accessible_nodes) > 0:
                 logger.info("No links in subscription_data, generating from accessible nodes. Nodes count: %s", len(accessible_nodes))
+                
+                # Получаем все хосты для получения адресов и портов
+                try:
+                    hosts_data = await api_client.get_hosts()
+                    hosts = hosts_data.get("response", [])
+                    hosts_dict = {h.get("uuid"): h for h in hosts if isinstance(h, dict)}
+                except Exception:
+                    logger.exception("Failed to get hosts for accessible nodes")
+                    hosts_dict = {}
+                
+                # Получаем все ноды для получения hostUuid
+                try:
+                    all_nodes_data = await api_client.get_nodes()
+                    all_nodes = all_nodes_data.get("response", [])
+                    nodes_dict = {n.get("uuid"): n for n in all_nodes if isinstance(n, dict)}
+                except Exception:
+                    logger.exception("Failed to get nodes for accessible nodes")
+                    nodes_dict = {}
+                
                 text_lines.append("")
                 text_lines.append(_("user.configs_by_nodes_title"))
                 
@@ -1600,14 +1620,33 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                     if not isinstance(node, dict):
                         continue
                     
-                    node_name = node.get("name", "Unknown")
+                    # В accessible-nodes используется nodeName, а не name
+                    node_name = node.get("nodeName", node.get("name", "Unknown"))
                     node_country = node.get("countryCode", node.get("country", ""))
-                    node_address = node.get("address", "")
-                    node_port = node.get("port")
                     node_uuid = node.get("uuid", "")
+                    
+                    # Получаем адрес и порт из хоста через ноду
+                    node_info = nodes_dict.get(node_uuid)
+                    if not node_info:
+                        logger.debug("Node info not found for uuid %s", node_uuid)
+                        continue
+                    
+                    host_uuid = node_info.get("hostUuid")
+                    if not host_uuid:
+                        logger.debug("Host UUID not found for node %s", node_name)
+                        continue
+                    
+                    host = hosts_dict.get(host_uuid)
+                    if not host:
+                        logger.debug("Host not found for uuid %s", host_uuid)
+                        continue
+                    
+                    node_address = host.get("address", "")
+                    node_port = host.get("port")
                     
                     # Пропускаем ноды без адреса или порта
                     if not node_address or not node_port:
+                        logger.debug("Node %s missing address or port: address=%s, port=%s", node_name, node_address, node_port)
                         continue
                     
                     country_display = f" ({node_country})" if node_country else ""
@@ -1745,6 +1784,8 @@ async def cb_user_configs(callback: CallbackQuery) -> None:
                                 link_index += 1
             except Exception:
                 logger.exception("Failed to get all nodes for config generation")
+        
+        logger.info("Final subscription_links count: %s, happ_crypto_link: %s", len(subscription_links), bool(happ_crypto_link))
         
         if not subscription_links and not happ_crypto_link:
             text_lines.append("")
