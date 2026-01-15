@@ -49,14 +49,14 @@ class RemnawaveApiClient:
             headers["Authorization"] = f"Bearer {self.settings.api_token}"
         return headers
 
-    async def _get(self, url: str, max_retries: int = 3) -> dict:
+    async def _get(self, url: str, params: dict | None = None, max_retries: int = 3) -> dict:
         """Выполняет GET запрос с retry для сетевых ошибок."""
         full_url = f"{self._client.base_url}{url}"
         last_exc = None
         for attempt in range(max_retries):
             try:
                 logger.debug("GET request to %s (attempt %d/%d)", full_url, attempt + 1, max_retries)
-                response = await self._client.get(url)
+                response = await self._client.get(url, params=params)
                 response.raise_for_status()
                 return response.json()
             except HTTPStatusError as exc:
@@ -200,7 +200,7 @@ class RemnawaveApiClient:
         return await self._get(f"/api/users/{user_uuid}")
 
     async def get_users(self, start: int = 0, size: int = 100) -> dict:
-        return await self._get(f"/api/users?start={start}&size={size}")
+        return await self._get("/api/users", params={"start": start, "size": size})
 
     async def update_user(self, user_uuid: str, **fields) -> dict:
         payload = {"uuid": user_uuid}
@@ -449,7 +449,10 @@ class RemnawaveApiClient:
         return await self._get("/api/bandwidth-stats/nodes/realtime")
 
     async def get_nodes_usage_range(self, start: str, end: str, top_nodes_limit: int = 10) -> dict:
-        return await self._get(f"/api/bandwidth-stats/nodes?start={start}&end={end}&topNodesLimit={top_nodes_limit}")
+        return await self._get(
+            "/api/bandwidth-stats/nodes",
+            params={"start": start, "end": end, "topNodesLimit": top_nodes_limit}
+        )
 
     # --- Hosts ---
     async def get_hosts(self) -> dict:
@@ -525,11 +528,17 @@ class RemnawaveApiClient:
 
     async def get_user_traffic_stats(self, user_uuid: str, start: str, end: str, top_nodes_limit: int = 10) -> dict:
         """Получает статистику трафика пользователя по нодам за период."""
-        return await self._get(f"/api/bandwidth-stats/users/{user_uuid}?start={start}&end={end}&topNodesLimit={top_nodes_limit}")
+        return await self._get(
+            f"/api/bandwidth-stats/users/{user_uuid}",
+            params={"start": start, "end": end, "topNodesLimit": top_nodes_limit}
+        )
 
     async def get_user_traffic_stats_legacy(self, user_uuid: str, start: str, end: str) -> dict:
         """Получает статистику трафика пользователя (legacy формат)."""
-        return await self._get(f"/api/bandwidth-stats/users/{user_uuid}/legacy?start={start}&end={end}")
+        return await self._get(
+            f"/api/bandwidth-stats/users/{user_uuid}/legacy",
+            params={"start": start, "end": end}
+        )
 
     async def get_user_accessible_nodes(self, user_uuid: str) -> dict:
         """Получает список доступных нод для пользователя."""
@@ -537,7 +546,10 @@ class RemnawaveApiClient:
 
     async def get_node_users_usage(self, node_uuid: str, start: str, end: str, top_users_limit: int = 10) -> dict:
         """Получает статистику использования ноды пользователями."""
-        return await self._get(f"/api/bandwidth-stats/nodes/{node_uuid}/users?start={start}&end={end}&topUsersLimit={top_users_limit}")
+        return await self._get(
+            f"/api/bandwidth-stats/nodes/{node_uuid}/users",
+            params={"start": start, "end": end, "topUsersLimit": top_users_limit}
+        )
 
     async def get_hwid_devices_stats(self) -> dict:
         """Получает статистику по устройствам (HWID)."""
@@ -545,7 +557,7 @@ class RemnawaveApiClient:
 
     async def get_all_hwid_devices(self, start: int = 0, size: int = 100) -> dict:
         """Получает все HWID устройства всех пользователей."""
-        return await self._get(f"/api/hwid/devices?start={start}&size={size}")
+        return await self._get("/api/hwid/devices", params={"start": start, "size": size})
 
     async def get_user_hwid_devices(self, user_uuid: str) -> dict:
         """Получает HWID устройства конкретного пользователя."""
@@ -565,7 +577,7 @@ class RemnawaveApiClient:
 
     async def get_top_users_by_hwid_devices(self, limit: int = 10) -> dict:
         """Получает топ пользователей по количеству HWID устройств."""
-        return await self._get(f"/api/hwid/devices/top-users?limit={limit}")
+        return await self._get("/api/hwid/devices/top-users", params={"limit": limit})
 
     # --- API Tokens ---
     async def get_tokens(self) -> dict:
