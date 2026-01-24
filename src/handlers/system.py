@@ -198,6 +198,167 @@ async def _fetch_server_stats_text() -> str:
         return _("errors.generic")
 
 
+def _create_bar_chart(value: int, max_value: int, width: int = 10) -> str:
+    """Создает текстовый бар-чарт с использованием Unicode символов."""
+    if max_value <= 0:
+        return "░" * width
+    fill = min(int((value / max_value) * width), width)
+    return "█" * fill + "░" * (width - fill)
+
+
+def _get_trend_emoji(current: int, previous: int) -> str:
+    """Возвращает эмодзи тренда на основе сравнения текущего и предыдущего значений."""
+    if current > previous:
+        return "📈"
+    elif current < previous:
+        return "📉"
+    return "➡️"
+
+
+async def _fetch_extended_stats_text() -> str:
+    """Расширенная статистика с графиками и трендами."""
+    try:
+        # Получаем основную статистику системы
+        data = await api_client.get_stats()
+        res = data.get("response", {})
+        users = res.get("users", {})
+        online = res.get("onlineStats", {})
+        nodes = res.get("nodes", {})
+        status_counts = users.get("statusCounts", {}) or {}
+
+        total_users = users.get("totalUsers", 0)
+        online_now = online.get("onlineNow", 0)
+        online_day = online.get("lastDay", 0)
+        online_week = online.get("lastWeek", 0)
+
+        lines = [
+            f"*{_('stats.extended_title')}*",
+            "",
+        ]
+
+        # === Секция активности пользователей ===
+        lines.append(f"*{_('stats.extended_activity_section')}*")
+        
+        # Определяем максимум для графиков активности
+        max_online = max(online_now, online_day, online_week, 1)
+        
+        # График активности
+        lines.append(_("stats.extended_online_now").format(
+            value=online_now,
+            bar=_create_bar_chart(online_now, max_online, 12),
+            trend=_get_trend_emoji(online_now, online_day)
+        ))
+        lines.append(_("stats.extended_online_day").format(
+            value=online_day,
+            bar=_create_bar_chart(online_day, max_online, 12),
+            trend=_get_trend_emoji(online_day, online_week)
+        ))
+        lines.append(_("stats.extended_online_week").format(
+            value=online_week,
+            bar=_create_bar_chart(online_week, max_online, 12)
+        ))
+
+        # Тренд активности
+        if online_day > 0:
+            activity_trend = ((online_now / online_day) * 100) - 100 if online_day > 0 else 0
+            trend_text = f"+{activity_trend:.1f}%" if activity_trend >= 0 else f"{activity_trend:.1f}%"
+            trend_emoji = "📈" if activity_trend > 0 else ("📉" if activity_trend < 0 else "➡️")
+            lines.append("")
+            lines.append(_("stats.extended_activity_trend").format(trend=trend_text, emoji=trend_emoji))
+
+        # === Секция распределения по статусам ===
+        if status_counts:
+            lines.append("")
+            lines.append(f"*{_('stats.extended_status_section')}*")
+            
+            # Сортируем статусы для консистентного отображения
+            sorted_statuses = sorted(status_counts.items(), key=lambda x: x[1], reverse=True)
+            max_status = max(status_counts.values()) if status_counts else 1
+            
+            # Эмодзи для статусов
+            status_emojis = {
+                "ACTIVE": "🟢",
+                "DISABLED": "🔴",
+                "LIMITED": "🟡",
+                "EXPIRED": "⚫",
+                "ON_HOLD": "⏸️",
+            }
+            
+            for status, count in sorted_statuses:
+                emoji = status_emojis.get(status, "⚪")
+                bar = _create_bar_chart(count, max_status, 10)
+                percent = (count / total_users * 100) if total_users > 0 else 0
+                lines.append(f"  {emoji} {status}: `{count}` ({percent:.1f}%)")
+                lines.append(f"     {bar}")
+
+        # === Секция инфраструктуры ===
+        lines.append("")
+        lines.append(f"*{_('stats.extended_infra_section')}*")
+
+        # Статистика нод
+        try:
+            nodes_data = await api_client.get_nodes()
+            nodes_list = nodes_data.get("response", [])
+            total_nodes = len(nodes_list)
+            enabled_nodes = sum(1 for n in nodes_list if not n.get("isDisabled"))
+            online_nodes = sum(1 for n in nodes_list if n.get("isConnected"))
+            
+            if total_nodes > 0:
+                online_percent = (online_nodes / total_nodes * 100)
+                bar = _create_bar_chart(online_nodes, total_nodes, 10)
+                health_emoji = "🟢" if online_percent >= 80 else ("🟡" if online_percent >= 50 else "🔴")
+                lines.append(_("stats.extended_nodes_health").format(
+                    online=online_nodes,
+                    total=total_nodes,
+                    percent=f"{online_percent:.0f}",
+                    bar=bar,
+                    emoji=health_emoji
+                ))
+        except Exception:
+            pass
+
+        # Статистика хостов
+        try:
+            hosts_data = await api_client.get_hosts()
+            hosts = hosts_data.get("response", [])
+            total_hosts = len(hosts)
+            enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
+            
+            if total_hosts > 0:
+                enabled_percent = (enabled_hosts / total_hosts * 100)
+                bar = _create_bar_chart(enabled_hosts, total_hosts, 10)
+                health_emoji = "🟢" if enabled_percent >= 80 else ("🟡" if enabled_percent >= 50 else "🔴")
+                lines.append(_("stats.extended_hosts_health").format(
+                    enabled=enabled_hosts,
+                    total=total_hosts,
+                    percent=f"{enabled_percent:.0f}",
+                    bar=bar,
+                    emoji=health_emoji
+                ))
+        except Exception:
+            pass
+
+        # === Сводка ===
+        lines.append("")
+        lines.append(f"*{_('stats.extended_summary_section')}*")
+        
+        # Общая картина
+        if total_users > 0:
+            active_rate = (status_counts.get("ACTIVE", 0) / total_users * 100) if total_users > 0 else 0
+            health_emoji = "🟢" if active_rate >= 70 else ("🟡" if active_rate >= 40 else "🔴")
+            lines.append(_("stats.extended_active_rate").format(
+                percent=f"{active_rate:.1f}",
+                emoji=health_emoji
+            ))
+
+        return "\n".join(lines)
+    except UnauthorizedError:
+        return _("errors.unauthorized")
+    except ApiClientError:
+        logger.exception("⚠️ Extended stats fetch failed")
+        return _("errors.generic")
+
+
 async def _fetch_stats_text() -> str:
     """Получает общую статистику системы."""
     try:
@@ -318,7 +479,7 @@ async def cb_stats(callback: CallbackQuery) -> None:
     await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
 
 
-@router.callback_query(F.data.in_(["stats:panel", "stats:server", "stats:traffic"]))
+@router.callback_query(F.data.in_(["stats:panel", "stats:server", "stats:traffic", "stats:extended"]))
 async def cb_stats_type(callback: CallbackQuery) -> None:
     """Обработчик выбора типа статистики."""
     if await _not_admin(callback):
@@ -336,6 +497,9 @@ async def cb_stats_type(callback: CallbackQuery) -> None:
         # Показываем меню выбора периода
         text = _("stats.traffic_select_period")
         await _edit_text_safe(callback.message, text, reply_markup=stats_period_keyboard(), parse_mode="Markdown")
+    elif stats_type == "extended":
+        text = await _fetch_extended_stats_text()
+        await _edit_text_safe(callback.message, text, reply_markup=stats_menu_keyboard(), parse_mode="Markdown")
     else:
         await callback.answer(_("errors.generic"), show_alert=True)
 
