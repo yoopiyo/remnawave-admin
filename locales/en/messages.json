@@ -47,7 +47,40 @@
     "revoke_confirm": "⚠️ Are you sure you want to revoke subscription for user <b>{username}</b>?\n\nThis action cannot be undone!",
     "revoke_confirm_yes": "✅ Yes, revoke",
     "revoke_confirm_no": "❌ Cancel",
-    "refresh": "🔄 Refresh"
+    "refresh": "🔄 Refresh",
+    "filters": "🔍 Filters",
+    "filter_all": "📋 All",
+    "filter_active": "Current: {filter}",
+    "filter_clear": "❌ Clear filter"
+  },
+  "filter": {
+    "title_users": "🔍 User Filters",
+    "title_nodes": "🔍 Node Filters",
+    "title_hosts": "🔍 Host Filters",
+    "select_filter": "Select a filter:",
+    "current_filter": "Current filter: {filter}",
+    "no_filter": "No filter applied",
+    "active_filter": "📌 Filter: {filter}",
+    "users": {
+      "ACTIVE": "✅ Active",
+      "DISABLED": "⛔ Disabled",
+      "LIMITED": "⚠️ Limited",
+      "EXPIRED": "⏰ Expired"
+    },
+    "nodes": {
+      "ONLINE": "🟢 Online",
+      "OFFLINE": "🔴 Offline",
+      "ENABLED": "✅ Enabled",
+      "DISABLED": "🟡 Disabled",
+      "by_tag": "🏷 By tag"
+    },
+    "hosts": {
+      "ENABLED": "🟢 Enabled",
+      "DISABLED": "🟡 Disabled"
+    },
+    "tag_select": "🏷 Select a tag to filter by:",
+    "no_tags": "⚠️ No tags found on nodes.",
+    "empty_results": "No results found for the selected filter."
   },
   "api": {},
   "errors": {

@@ -5,6 +5,7 @@ from src.handlers.billing import router as billing_router
 from src.handlers.bulk import router as bulk_router
 from src.handlers.commands import router as commands_router
 from src.handlers.errors import errors_handler
+from src.handlers.filters import router as filters_router
 from src.handlers.hosts import router as hosts_router
 from src.handlers.navigation import router as navigation_router
 from src.handlers.nodes import router as nodes_router
@@ -18,6 +19,7 @@ def register_handlers(dp: Dispatcher) -> None:
     # Сначала общие роутеры (commands, navigation), затем доменные
     dp.include_router(commands_router)
     dp.include_router(navigation_router)
+    dp.include_router(filters_router)
     dp.include_router(users_router)
     dp.include_router(nodes_router)
     dp.include_router(hosts_router)

@@ -7,7 +7,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMar
 from aiogram.utils.i18n import gettext as _
 
 from src.handlers.common import _cleanup_message, _edit_text_safe, _get_target_user_id, _not_admin, _send_clean_message
-from src.handlers.state import NODES_PAGE_BY_USER, NODES_PAGE_SIZE, PENDING_INPUT
+from src.handlers.state import NODES_FILTER_BY_USER, NODES_PAGE_BY_USER, NODES_PAGE_SIZE, PENDING_INPUT
 from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard
 from src.keyboards.navigation import NavTarget, nav_keyboard, nav_row
 from src.keyboards.node_actions import node_actions_keyboard
@@ -65,7 +65,7 @@ def _get_nodes_page(user_id: int | None) -> int:
 
 
 async def _fetch_nodes_with_keyboard(user_id: int | None = None, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
-    """Получает текст списка нод со статистикой и клавиатуру с кнопками для каждой ноды с пагинацией."""
+    """Получает текст списка нод со статистикой и клавиатуру с кнопками для каждой ноды с пагинацией и фильтрацией."""
     try:
         data = await api_client.get_nodes()
         nodes = data.get("response", [])
@@ -74,16 +74,52 @@ async def _fetch_nodes_with_keyboard(user_id: int | None = None, page: int = 0) 
 
         sorted_nodes = sorted(nodes, key=lambda n: n.get("viewPosition", 0))
 
-        # Вычисляем статистику
-        total_nodes = len(nodes)
-        enabled_nodes = sum(1 for n in nodes if not n.get("isDisabled"))
-        disabled_nodes = total_nodes - enabled_nodes
-        online_nodes = sum(1 for n in nodes if n.get("isConnected"))
-        total_users = sum(n.get("usersOnline", 0) or 0 for n in nodes)
-        total_traffic = sum(n.get("trafficUsedBytes", 0) or 0 for n in nodes)
+        # Получаем текущий фильтр
+        current_filter = NODES_FILTER_BY_USER.get(user_id) if user_id else None
+        
+        # Применяем фильтрацию
+        if current_filter:
+            filtered_nodes = []
+            filter_status = current_filter.get("status")
+            filter_tag = current_filter.get("tag")
+            
+            for node in sorted_nodes:
+                # Фильтр по статусу
+                if filter_status:
+                    node_disabled = node.get("isDisabled", False)
+                    node_connected = node.get("isConnected", False)
+                    
+                    if filter_status == "ONLINE" and not (node_connected and not node_disabled):
+                        continue
+                    elif filter_status == "OFFLINE" and not (not node_connected and not node_disabled):
+                        continue
+                    elif filter_status == "ENABLED" and node_disabled:
+                        continue
+                    elif filter_status == "DISABLED" and not node_disabled:
+                        continue
+                
+                # Фильтр по тегу
+                if filter_tag:
+                    node_tags = node.get("tags", [])
+                    if filter_tag not in node_tags:
+                        continue
+                
+                filtered_nodes.append(node)
+            
+            sorted_nodes = filtered_nodes
 
-        # Пагинация
-        total_pages = max(ceil(total_nodes / NODES_PAGE_SIZE), 1)
+        # Вычисляем статистику (по всем нодам, не отфильтрованным)
+        all_nodes = data.get("response", [])
+        total_all_nodes = len(all_nodes)
+        enabled_nodes = sum(1 for n in all_nodes if not n.get("isDisabled"))
+        disabled_nodes = total_all_nodes - enabled_nodes
+        online_nodes = sum(1 for n in all_nodes if n.get("isConnected"))
+        total_users = sum(n.get("usersOnline", 0) or 0 for n in all_nodes)
+        total_traffic = sum(n.get("trafficUsedBytes", 0) or 0 for n in all_nodes)
+
+        # Пагинация (по отфильтрованным нодам)
+        total_filtered = len(sorted_nodes)
+        total_pages = max(ceil(total_filtered / NODES_PAGE_SIZE), 1)
         page = min(max(page, 0), total_pages - 1)
         start = page * NODES_PAGE_SIZE
         end = start + NODES_PAGE_SIZE
@@ -95,40 +131,56 @@ async def _fetch_nodes_with_keyboard(user_id: int | None = None, page: int = 0) 
 
         # Формируем текст со статистикой и списком нод
         lines = [
-            _("node.list_title").format(total=total_nodes, page=page + 1, pages=total_pages),
+            _("node.list_title").format(total=total_filtered, page=page + 1, pages=total_pages),
             "",
             _("node.list_stats").format(
-                total=total_nodes,
+                total=total_all_nodes,
                 enabled=enabled_nodes,
                 disabled=disabled_nodes,
                 online=online_nodes,
                 users=total_users,
                 traffic=format_bytes(total_traffic),
             ),
-            "",
         ]
+        
+        # Добавляем информацию о фильтре
+        if current_filter:
+            if current_filter.get("status"):
+                filter_label = _("filter.nodes." + current_filter["status"])
+            elif current_filter.get("tag"):
+                filter_label = f"🏷 {current_filter['tag']}"
+            else:
+                filter_label = "—"
+            lines.append("")
+            lines.append(_("filter.active_filter").format(filter=filter_label))
+        
+        lines.append("")
 
         rows: list[list[InlineKeyboardButton]] = []
 
-        for node in page_nodes:
-            status = "DISABLED" if node.get("isDisabled") else ("ONLINE" if node.get("isConnected") else "OFFLINE")
-            status_emoji = "🟢" if status == "ONLINE" else ("🟡" if status == "DISABLED" else "🔴")
-            address = f"{node.get('address', 'n/a')}:{node.get('port') or '—'}"
-            users_online = node.get("usersOnline", "—")
-            name = node.get("name", "n/a")
-            node_uuid = node.get("uuid", "")
+        if not page_nodes and current_filter:
+            # Если фильтр применён, но результатов нет
+            lines.append(_("filter.empty_results"))
+        else:
+            for node in page_nodes:
+                status = "DISABLED" if node.get("isDisabled") else ("ONLINE" if node.get("isConnected") else "OFFLINE")
+                status_emoji = "🟢" if status == "ONLINE" else ("🟡" if status == "DISABLED" else "🔴")
+                address = f"{node.get('address', 'n/a')}:{node.get('port') or '—'}"
+                users_online = node.get("usersOnline", "—")
+                name = node.get("name", "n/a")
+                node_uuid = node.get("uuid", "")
 
-            line = _("node.list_item").format(
-                statusEmoji=status_emoji,
-                name=name,
-                address=address,
-                users=users_online,
-                traffic=format_bytes(node.get("trafficUsedBytes")),
-            )
-            lines.append(line)
+                line = _("node.list_item").format(
+                    statusEmoji=status_emoji,
+                    name=name,
+                    address=address,
+                    users=users_online,
+                    traffic=format_bytes(node.get("trafficUsedBytes")),
+                )
+                lines.append(line)
 
-            # Добавляем кнопку для редактирования ноды
-            rows.append([InlineKeyboardButton(text=f"{status_emoji} {name}", callback_data=f"node_edit:{node_uuid}")])
+                # Добавляем кнопку для редактирования ноды
+                rows.append([InlineKeyboardButton(text=f"{status_emoji} {name}", callback_data=f"node_edit:{node_uuid}")])
 
         # Добавляем кнопки пагинации
         if total_pages > 1:
@@ -140,6 +192,9 @@ async def _fetch_nodes_with_keyboard(user_id: int | None = None, page: int = 0) 
             if nav_buttons:
                 rows.append(nav_buttons)
 
+        # Добавляем кнопку "Фильтры"
+        rows.append([InlineKeyboardButton(text=_("actions.filters"), callback_data="filter:nodes:show")])
+        
         # Добавляем кнопку "Назад" к меню нод
         rows.append(nav_row(NavTarget.NODES_MENU))
 

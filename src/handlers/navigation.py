@@ -10,6 +10,7 @@ from src.handlers.state import (
     MAX_NAVIGATION_HISTORY,
     NAVIGATION_HISTORY,
     PENDING_INPUT,
+    SUBS_FILTER_BY_USER,
     SUBS_PAGE_BY_USER,
     SUBS_PAGE_SIZE,
     USER_DETAIL_BACK_TARGET,
@@ -201,21 +202,48 @@ def _pop_navigation_history(user_id: int | None) -> str | None:
 
 
 async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 0) -> None:
-    """Отправляет страницу со списком подписок."""
+    """Отправляет страницу со списком подписок с поддержкой фильтрации."""
     user_id = _get_target_user_id(target)
     page = max(page, 0)
-    start = page * SUBS_PAGE_SIZE
+    
+    # Получаем текущий фильтр
+    current_filter = SUBS_FILTER_BY_USER.get(user_id) if user_id else None
+    
     try:
-        data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
-        payload = data.get("response", data)
-        total = payload.get("total", 0) or 0
-        total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
-        page = min(page, total_pages - 1)
-        if page != start // SUBS_PAGE_SIZE:
+        # Получаем всех пользователей для фильтрации (API не поддерживает фильтрацию)
+        if current_filter:
+            # При фильтрации получаем больше данных
+            data = await api_client.get_users(start=0, size=500)
+            payload = data.get("response", data)
+            all_users = payload.get("users") or []
+            
+            # Фильтруем пользователей по статусу
+            filtered_users = []
+            for user in all_users:
+                info = user.get("response", user)
+                status = info.get("status", "").upper()
+                if status == current_filter:
+                    filtered_users.append(user)
+            
+            total = len(filtered_users)
+            total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+            page = min(page, total_pages - 1)
+            start = page * SUBS_PAGE_SIZE
+            end = start + SUBS_PAGE_SIZE
+            users = filtered_users[start:end]
+        else:
+            # Без фильтра используем пагинацию API
             start = page * SUBS_PAGE_SIZE
             data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
             payload = data.get("response", data)
-        users = payload.get("users") or []
+            total = payload.get("total", 0) or 0
+            total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+            page = min(page, total_pages - 1)
+            if page != start // SUBS_PAGE_SIZE:
+                start = page * SUBS_PAGE_SIZE
+                data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
+                payload = data.get("response", data)
+            users = payload.get("users") or []
     except UnauthorizedError:
         await _send_clean_message(target, _("errors.unauthorized"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
         return
@@ -228,10 +256,20 @@ async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 
         SUBS_PAGE_BY_USER[user_id] = page
 
     if not users:
-        await _send_clean_message(target, _("sub.list_empty"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
+        if current_filter:
+            # Если фильтр применён, но результатов нет
+            rows = [
+                [InlineKeyboardButton(text=_("actions.filters"), callback_data="filter:users:show")],
+            ]
+            rows.append(nav_row(NavTarget.USERS_MENU))
+            keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+            await _send_clean_message(target, _("filter.empty_results"), reply_markup=keyboard)
+        else:
+            await _send_clean_message(target, _("sub.list_empty"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
         return
 
-    total = payload.get("total", len(users)) or len(users)
+    if not current_filter:
+        total = payload.get("total", len(users)) or len(users)
     total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
     rows: list[list[InlineKeyboardButton]] = []
     for user in users:
@@ -250,11 +288,20 @@ async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 
         if nav_buttons:
             rows.append(nav_buttons)
 
-    # Добавляем кнопку поиска
-    rows.append([InlineKeyboardButton(text=_("sub.search"), callback_data="subs:search")])
+    # Добавляем кнопки поиска и фильтров
+    rows.append([
+        InlineKeyboardButton(text=_("sub.search"), callback_data="subs:search"),
+        InlineKeyboardButton(text=_("actions.filters"), callback_data="filter:users:show"),
+    ])
     rows.append(nav_row(NavTarget.USERS_MENU))
     keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
+    
+    # Формируем заголовок с информацией о фильтре
     title = _("sub.list_title").format(page=page + 1, pages=total_pages, total=total)
+    if current_filter:
+        filter_label = _("filter.users." + current_filter)
+        title = f"{title}\n{_('filter.active_filter').format(filter=filter_label)}"
+    
     await _send_clean_message(target, title, reply_markup=keyboard)
 
 

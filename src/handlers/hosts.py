@@ -7,7 +7,7 @@ from aiogram.utils.i18n import gettext as _
 from math import ceil
 
 from src.handlers.common import _edit_text_safe, _get_target_user_id, _not_admin, _send_clean_message
-from src.handlers.state import HOSTS_PAGE_BY_USER, HOSTS_PAGE_SIZE, PENDING_INPUT
+from src.handlers.state import HOSTS_FILTER_BY_USER, HOSTS_PAGE_BY_USER, HOSTS_PAGE_SIZE, PENDING_INPUT
 from src.keyboards.host_actions import host_actions_keyboard
 from src.keyboards.host_edit import host_edit_keyboard
 from src.keyboards.hosts_menu import hosts_menu_keyboard
@@ -85,7 +85,7 @@ def _get_hosts_page(user_id: int | None) -> int:
 
 
 async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
-    """Получает список хостов с клавиатурой для редактирования с пагинацией."""
+    """Получает список хостов с клавиатурой для редактирования с пагинацией и фильтрацией."""
     try:
         data = await api_client.get_hosts()
         hosts = data.get("response", [])
@@ -94,13 +94,33 @@ async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) 
 
         sorted_hosts = sorted(hosts, key=lambda h: h.get("viewPosition", 0))
 
-        # Вычисляем статистику
-        total_hosts = len(hosts)
-        enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
-        disabled_hosts = total_hosts - enabled_hosts
+        # Получаем текущий фильтр
+        current_filter = HOSTS_FILTER_BY_USER.get(user_id) if user_id else None
+        
+        # Применяем фильтрацию
+        if current_filter:
+            filtered_hosts = []
+            for host in sorted_hosts:
+                host_disabled = host.get("isDisabled", False)
+                
+                if current_filter == "ENABLED" and host_disabled:
+                    continue
+                elif current_filter == "DISABLED" and not host_disabled:
+                    continue
+                
+                filtered_hosts.append(host)
+            
+            sorted_hosts = filtered_hosts
 
-        # Пагинация
-        total_pages = max(ceil(total_hosts / HOSTS_PAGE_SIZE), 1)
+        # Вычисляем статистику (по всем хостам, не отфильтрованным)
+        all_hosts = data.get("response", [])
+        total_all_hosts = len(all_hosts)
+        enabled_hosts = sum(1 for h in all_hosts if not h.get("isDisabled"))
+        disabled_hosts = total_all_hosts - enabled_hosts
+
+        # Пагинация (по отфильтрованным хостам)
+        total_filtered = len(sorted_hosts)
+        total_pages = max(ceil(total_filtered / HOSTS_PAGE_SIZE), 1)
         page = min(max(page, 0), total_pages - 1)
         start = page * HOSTS_PAGE_SIZE
         end = start + HOSTS_PAGE_SIZE
@@ -112,35 +132,46 @@ async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) 
 
         # Формируем текст со статистикой и списком хостов
         lines = [
-            _("host.list_title").format(total=total_hosts, page=page + 1, pages=total_pages),
+            _("host.list_title").format(total=total_filtered, page=page + 1, pages=total_pages),
             "",
             _("host.list_stats").format(
-                total=total_hosts,
+                total=total_all_hosts,
                 enabled=enabled_hosts,
                 disabled=disabled_hosts,
             ),
-            "",
         ]
+        
+        # Добавляем информацию о фильтре
+        if current_filter:
+            filter_label = _("filter.hosts." + current_filter)
+            lines.append("")
+            lines.append(_("filter.active_filter").format(filter=filter_label))
+        
+        lines.append("")
 
         rows: list[list[InlineKeyboardButton]] = []
 
-        for host in page_hosts:
-            status = "DISABLED" if host.get("isDisabled") else "ENABLED"
-            status_emoji = "🟡" if status == "DISABLED" else "🟢"
-            address = f"{host.get('address', 'n/a')}:{host.get('port', '—')}"
-            remark = host.get("remark", "n/a")
-            tag = host.get("tag", "—")
+        if not page_hosts and current_filter:
+            # Если фильтр применён, но результатов нет
+            lines.append(_("filter.empty_results"))
+        else:
+            for host in page_hosts:
+                status = "DISABLED" if host.get("isDisabled") else "ENABLED"
+                status_emoji = "🟡" if status == "DISABLED" else "🟢"
+                address = f"{host.get('address', 'n/a')}:{host.get('port', '—')}"
+                remark = host.get("remark", "n/a")
+                tag = host.get("tag", "—")
 
-            line = _("host.list_item").format(
-                statusEmoji=status_emoji,
-                remark=remark,
-                address=address,
-                tag=tag,
-            )
-            lines.append(line)
+                line = _("host.list_item").format(
+                    statusEmoji=status_emoji,
+                    remark=remark,
+                    address=address,
+                    tag=tag,
+                )
+                lines.append(line)
 
-            # Добавляем кнопку для редактирования хоста
-            rows.append([InlineKeyboardButton(text=f"{status_emoji} {remark}", callback_data=f"host_edit:{host.get('uuid', '')}")])
+                # Добавляем кнопку для редактирования хоста
+                rows.append([InlineKeyboardButton(text=f"{status_emoji} {remark}", callback_data=f"host_edit:{host.get('uuid', '')}")])
 
         # Добавляем кнопки пагинации
         if total_pages > 1:
@@ -152,6 +183,9 @@ async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) 
             if nav_buttons:
                 rows.append(nav_buttons)
 
+        # Добавляем кнопку "Фильтры"
+        rows.append([InlineKeyboardButton(text=_("actions.filters"), callback_data="filter:hosts:show")])
+        
         # Добавляем кнопку "Назад" к меню нод/хостов/профилей
         rows.append(nav_row(NavTarget.NODES_MENU))
 
@@ -438,7 +472,8 @@ async def cb_hosts_actions(callback: CallbackQuery) -> None:
     if action == "list":
         # Обновляем список хостов
         try:
-            text, keyboard = await _fetch_hosts_with_keyboard()
+            user_id = callback.from_user.id
+            text, keyboard = await _fetch_hosts_with_keyboard(user_id=user_id)
             try:
                 await callback.message.edit_text(text, reply_markup=keyboard)
             except TelegramBadRequest as e:
@@ -447,6 +482,23 @@ async def cb_hosts_actions(callback: CallbackQuery) -> None:
                     await callback.answer(_("host.list_updated"), show_alert=False)
                 else:
                     raise
+        except UnauthorizedError:
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
+        except ApiClientError:
+            logger.exception("❌ Hosts fetch failed")
+            await callback.message.edit_text(_("errors.generic"), reply_markup=hosts_menu_keyboard())
+    elif action == "page":
+        # Обработчик пагинации списка хостов
+        if len(parts) < 3:
+            return
+        try:
+            page = int(parts[2])
+        except ValueError:
+            page = 0
+        user_id = callback.from_user.id
+        try:
+            text, keyboard = await _fetch_hosts_with_keyboard(user_id=user_id, page=max(page, 0))
+            await callback.message.edit_text(text, reply_markup=keyboard)
         except UnauthorizedError:
             await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())
         except ApiClientError:

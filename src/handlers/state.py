@@ -43,6 +43,18 @@ NODES_PAGE_BY_USER: dict[int, int] = {}
 # Ключ: user_id, Значение: номер страницы (int)
 HOSTS_PAGE_BY_USER: dict[int, int] = {}
 
+# Словарь для хранения активных фильтров для пользователей
+# Ключ: user_id, Значение: строка фильтра (ACTIVE, DISABLED, LIMITED, EXPIRED) или None
+SUBS_FILTER_BY_USER: dict[int, str | None] = {}
+
+# Словарь для хранения активных фильтров для нод
+# Ключ: user_id, Значение: dict с полями "status" (ONLINE, OFFLINE, ENABLED, DISABLED) и "tag" (строка) или None
+NODES_FILTER_BY_USER: dict[int, dict | None] = {}
+
+# Словарь для хранения активных фильтров для хостов
+# Ключ: user_id, Значение: строка фильтра (ENABLED, DISABLED) или None
+HOSTS_FILTER_BY_USER: dict[int, str | None] = {}
+
 # Константы
 ADMIN_COMMAND_DELETE_DELAY = 2.0
 SEARCH_PAGE_SIZE = 100
@@ -50,4 +62,9 @@ MAX_SEARCH_RESULTS = 10
 SUBS_PAGE_SIZE = 8
 NODES_PAGE_SIZE = 10
 HOSTS_PAGE_SIZE = 10
+
+# Константы для фильтров
+SUBS_FILTER_OPTIONS = ["ACTIVE", "DISABLED", "LIMITED", "EXPIRED"]
+NODES_STATUS_FILTER_OPTIONS = ["ONLINE", "OFFLINE", "ENABLED", "DISABLED"]
+HOSTS_FILTER_OPTIONS = ["ENABLED", "DISABLED"]
 
