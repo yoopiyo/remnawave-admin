@@ -148,6 +148,58 @@ def _get_subs_page(user_id: int | None) -> int:
     return max(SUBS_PAGE_BY_USER.get(user_id, 0), 0)
 
 
+def _get_navigation_back_target(user_id: int | None) -> str:
+    """Получает целевое меню для возврата из истории навигации."""
+    if user_id is None:
+        return NavTarget.MAIN_MENU
+    
+    history = NAVIGATION_HISTORY.get(user_id, [])
+    if history:
+        # Возвращаем последний элемент из истории
+        return history[-1]
+    
+    # Если истории нет, возвращаемся в главное меню
+    return NavTarget.MAIN_MENU
+
+
+def _push_navigation_history(user_id: int | None, destination: str) -> None:
+    """Добавляет пункт назначения в историю навигации."""
+    if user_id is None:
+        return
+    
+    # Не добавляем главное меню в историю
+    if destination == NavTarget.MAIN_MENU:
+        return
+    
+    if user_id not in NAVIGATION_HISTORY:
+        NAVIGATION_HISTORY[user_id] = []
+    
+    history = NAVIGATION_HISTORY[user_id]
+    
+    # Если последний элемент уже такой же, не добавляем дубликат
+    if history and history[-1] == destination:
+        return
+    
+    # Добавляем в историю
+    history.append(destination)
+    
+    # Ограничиваем размер истории
+    if len(history) > MAX_NAVIGATION_HISTORY:
+        history.pop(0)
+
+
+def _pop_navigation_history(user_id: int | None) -> str | None:
+    """Удаляет и возвращает последний элемент из истории навигации."""
+    if user_id is None:
+        return None
+    
+    history = NAVIGATION_HISTORY.get(user_id, [])
+    if history:
+        return history.pop()
+    
+    return None
+
+
 async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 0) -> None:
     """Отправляет страницу со списком подписок."""
     user_id = _get_target_user_id(target)
@@ -206,9 +258,14 @@ async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 
     await _send_clean_message(target, title, reply_markup=keyboard)
 
 
-async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
+async def _navigate(target: Message | CallbackQuery, destination: str, is_back: bool = False) -> None:
     """Навигация между меню."""
     user_id = _get_target_user_id(target)
+    
+    # При навигации назад удаляем последний элемент из истории
+    if is_back:
+        _pop_navigation_history(user_id)
+    
     keep_search = destination in {NavTarget.USER_SEARCH_PROMPT, NavTarget.USER_SEARCH_RESULTS}
     keep_subs = destination == NavTarget.SUBS_LIST
     _clear_user_state(user_id, keep_search=keep_search, keep_subs=keep_subs)
@@ -313,6 +370,10 @@ async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
         return
 
     await _send_clean_message(target, _("bot.menu"), reply_markup=main_menu_keyboard())
+    
+    # После успешной навигации добавляем пункт назначения в историю (если не назад)
+    if not is_back:
+        _push_navigation_history(user_id, destination)
 
 
 @router.callback_query(F.data == "nav:home")
@@ -342,9 +403,6 @@ async def cb_nav_back(callback: CallbackQuery) -> None:
     await callback.answer()
     user_id = _get_target_user_id(callback)
     
-    # Пытаемся получить целевое меню из истории навигации
-    back_target = _get_navigation_back_target(user_id)
-    
     # Если в callback_data указано явное целевое меню, используем его
     # (для обратной совместимости)
     parts = callback.data.split(":", 2)
@@ -354,6 +412,7 @@ async def cb_nav_back(callback: CallbackQuery) -> None:
         await _navigate(callback, explicit_target, is_back=True)
     else:
         # Используем историю навигации
+        back_target = _get_navigation_back_target(user_id)
         await _navigate(callback, back_target, is_back=True)
 
 
