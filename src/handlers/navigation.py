@@ -7,6 +7,8 @@ from aiogram.utils.i18n import gettext as _
 
 from src.handlers.common import _clear_user_state, _edit_text_safe, _get_target_user_id, _not_admin, _send_clean_message
 from src.handlers.state import (
+    MAX_NAVIGATION_HISTORY,
+    NAVIGATION_HISTORY,
     PENDING_INPUT,
     SUBS_PAGE_BY_USER,
     SUBS_PAGE_SIZE,
@@ -338,8 +340,21 @@ async def cb_nav_back(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer()
-    target = callback.data.split(":", 2)[2]
-    await _navigate(callback, target)
+    user_id = _get_target_user_id(callback)
+    
+    # Пытаемся получить целевое меню из истории навигации
+    back_target = _get_navigation_back_target(user_id)
+    
+    # Если в callback_data указано явное целевое меню, используем его
+    # (для обратной совместимости)
+    parts = callback.data.split(":", 2)
+    if len(parts) > 2:
+        explicit_target = parts[2]
+        # Используем явное целевое меню, если оно указано
+        await _navigate(callback, explicit_target, is_back=True)
+    else:
+        # Используем историю навигации
+        await _navigate(callback, back_target, is_back=True)
 
 
 @router.callback_query(F.data == "menu:back")

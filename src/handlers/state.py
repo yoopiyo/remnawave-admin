@@ -24,6 +24,13 @@ USER_SEARCH_CONTEXT: dict[int, dict] = {}
 # Ключ: user_id, Значение: NavTarget строка
 USER_DETAIL_BACK_TARGET: dict[int, str] = {}
 
+# История навигации для каждого пользователя
+# Ключ: user_id, Значение: список NavTarget строк (стек навигации)
+NAVIGATION_HISTORY: dict[int, list[str]] = {}
+
+# Максимальная глубина истории навигации
+MAX_NAVIGATION_HISTORY = 10
+
 # Словарь для хранения текущей страницы подписок для каждого пользователя
 # Ключ: user_id, Значение: номер страницы (int)
 SUBS_PAGE_BY_USER: dict[int, int] = {}

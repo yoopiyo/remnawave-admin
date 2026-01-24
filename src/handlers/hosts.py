@@ -114,7 +114,11 @@ async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) 
         lines = [
             _("host.list_title").format(total=total_hosts, page=page + 1, pages=total_pages),
             "",
-            f"✅ Включено: {enabled_hosts} | ⛔️ Выключено: {disabled_hosts}",
+            _("host.list_stats").format(
+                total=total_hosts,
+                enabled=enabled_hosts,
+                disabled=disabled_hosts,
+            ),
             "",
         ]
 

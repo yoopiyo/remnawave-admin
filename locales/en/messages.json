@@ -369,6 +369,7 @@
     "list": "📋 List hosts",
     "update": "✏️ Edit host",
     "list_title": "🖥 Hosts • page {page}/{pages} • total {total}",
+    "list_stats": "📊 Statistics:\n  Total: {total}\n  🟢 Enabled: {enabled}\n  🟡 Disabled: {disabled}",
     "list_item": "{statusEmoji} {remark} — {address} | tag {tag}",
     "list_more": "…and {count} more",
     "list_hint": "ℹ️ Host details: /host <uuid>",
