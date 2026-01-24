@@ -39,10 +39,20 @@ from src.handlers.users import _format_user_choice, _send_user_summary, _show_us
 from src.keyboards.subscription_actions import subscription_keyboard
 from src.utils.formatters import build_subscription_summary
 
-async def _fetch_main_menu_text() -> str:
-    """Получает текст для главного меню с краткой статистикой."""
-    from aiogram import Bot
-    from aiogram.fsm.context import FSMContext
+async def _fetch_main_menu_text(force_refresh: bool = False) -> str:
+    """Получает текст для главного меню с краткой статистикой с кэшированием."""
+    from src.handlers.state import STATS_CACHE, STATS_CACHE_TTL
+    import time
+    
+    cache_key = "main_menu_stats"
+    current_time = time.time()
+    
+    # Проверяем кэш
+    if not force_refresh and cache_key in STATS_CACHE:
+        cached = STATS_CACHE[cache_key]
+        if current_time - cached["timestamp"] < STATS_CACHE_TTL:
+            # Возвращаем закэшированные данные
+            return cached["data"]
     
     panel_status = ""
     panel_status_text = ""
@@ -112,7 +122,15 @@ async def _fetch_main_menu_text() -> str:
             ),
         ]
 
-        return "\n".join(lines)
+        result = "\n".join(lines)
+        
+        # Сохраняем в кэш
+        STATS_CACHE[cache_key] = {
+            "data": result,
+            "timestamp": current_time,
+        }
+        
+        return result
     except Exception:
         # Если не удалось получить статистику, возвращаем простое меню
         logger.exception("Failed to fetch main menu stats")
@@ -216,14 +234,20 @@ async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
         await _send_clean_message(target, _("bot.menu"), reply_markup=nodes_menu_keyboard())
         return
     if destination == NavTarget.NODES_LIST:
-        text = await _fetch_nodes_text()
-        from src.keyboards.nodes_menu import nodes_list_keyboard
-
-        await _send_clean_message(target, text, reply_markup=nodes_list_keyboard())
+        from src.handlers.nodes import _fetch_nodes_with_keyboard
+        from src.handlers.common import _get_target_user_id
+        user_id = _get_target_user_id(target)
+        from src.handlers.nodes import _get_nodes_page
+        page = _get_nodes_page(user_id)
+        text, keyboard = await _fetch_nodes_with_keyboard(user_id=user_id, page=page)
+        await _send_clean_message(target, text, reply_markup=keyboard)
         return
     if destination == NavTarget.HOSTS_MENU:
-        text = await _fetch_hosts_text()
-        await _send_clean_message(target, text, reply_markup=hosts_menu_keyboard())
+        from src.handlers.hosts import _fetch_hosts_with_keyboard, _get_hosts_page
+        user_id = _get_target_user_id(target)
+        page = _get_hosts_page(user_id)
+        text, keyboard = await _fetch_hosts_with_keyboard(user_id=user_id, page=page)
+        await _send_clean_message(target, text, reply_markup=keyboard)
         return
     if destination == NavTarget.CONFIGS_MENU:
         text = await _fetch_configs_text()
@@ -306,7 +330,7 @@ async def cb_menu_refresh(callback: CallbackQuery) -> None:
     if await _not_admin(callback):
         return
     await callback.answer(_("node.list_updated"), show_alert=False)
-    menu_text = await _fetch_main_menu_text()
+    menu_text = await _fetch_main_menu_text(force_refresh=True)
     await _edit_text_safe(callback.message, menu_text, reply_markup=main_menu_keyboard(), parse_mode="HTML")
 
 

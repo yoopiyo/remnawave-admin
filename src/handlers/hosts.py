@@ -4,8 +4,10 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 
-from src.handlers.common import _edit_text_safe, _not_admin, _send_clean_message
-from src.handlers.state import PENDING_INPUT
+from math import ceil
+
+from src.handlers.common import _edit_text_safe, _get_target_user_id, _not_admin, _send_clean_message
+from src.handlers.state import HOSTS_PAGE_BY_USER, HOSTS_PAGE_SIZE, PENDING_INPUT
 from src.keyboards.host_actions import host_actions_keyboard
 from src.keyboards.host_edit import host_edit_keyboard
 from src.keyboards.hosts_menu import hosts_menu_keyboard
@@ -74,8 +76,15 @@ async def _fetch_hosts_text() -> str:
         return _("errors.generic")
 
 
-async def _fetch_hosts_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
-    """Получает список хостов с клавиатурой для редактирования."""
+def _get_hosts_page(user_id: int | None) -> int:
+    """Получает текущую страницу хостов для пользователя."""
+    if user_id is None:
+        return 0
+    return max(HOSTS_PAGE_BY_USER.get(user_id, 0), 0)
+
+
+async def _fetch_hosts_with_keyboard(user_id: int | None = None, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    """Получает список хостов с клавиатурой для редактирования с пагинацией."""
     try:
         data = await api_client.get_hosts()
         hosts = data.get("response", [])
@@ -89,9 +98,20 @@ async def _fetch_hosts_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
         enabled_hosts = sum(1 for h in hosts if not h.get("isDisabled"))
         disabled_hosts = total_hosts - enabled_hosts
 
+        # Пагинация
+        total_pages = max(ceil(total_hosts / HOSTS_PAGE_SIZE), 1)
+        page = min(max(page, 0), total_pages - 1)
+        start = page * HOSTS_PAGE_SIZE
+        end = start + HOSTS_PAGE_SIZE
+        page_hosts = sorted_hosts[start:end]
+
+        # Сохраняем текущую страницу
+        if user_id is not None:
+            HOSTS_PAGE_BY_USER[user_id] = page
+
         # Формируем текст со статистикой и списком хостов
         lines = [
-            _("host.list_title").format(total=total_hosts),
+            _("host.list_title").format(total=total_hosts, page=page + 1, pages=total_pages),
             "",
             f"✅ Включено: {enabled_hosts} | ⛔️ Выключено: {disabled_hosts}",
             "",
@@ -99,7 +119,7 @@ async def _fetch_hosts_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
 
         rows: list[list[InlineKeyboardButton]] = []
 
-        for host in sorted_hosts[:20]:
+        for host in page_hosts:
             status = "DISABLED" if host.get("isDisabled") else "ENABLED"
             status_emoji = "🟡" if status == "DISABLED" else "🟢"
             address = f"{host.get('address', 'n/a')}:{host.get('port', '—')}"
@@ -117,8 +137,15 @@ async def _fetch_hosts_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
             # Добавляем кнопку для редактирования хоста
             rows.append([InlineKeyboardButton(text=f"{status_emoji} {remark}", callback_data=f"host_edit:{host.get('uuid', '')}")])
 
-        if len(hosts) > 20:
-            lines.append(_("host.list_more").format(count=len(hosts) - 20))
+        # Добавляем кнопки пагинации
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton(text=_("sub.prev_page"), callback_data=f"hosts:page:{page-1}"))
+            if page + 1 < total_pages:
+                nav_buttons.append(InlineKeyboardButton(text=_("sub.next_page"), callback_data=f"hosts:page:{page+1}"))
+            if nav_buttons:
+                rows.append(nav_buttons)
 
         # Добавляем только кнопку "Назад" к списку хостов
         rows.append(nav_row(NavTarget.HOSTS_MENU))
@@ -423,7 +450,9 @@ async def cb_hosts_actions(callback: CallbackQuery) -> None:
     elif action == "update":
         # Показываем список хостов для выбора
         try:
-            text, keyboard = await _fetch_hosts_with_keyboard()
+            user_id = callback.from_user.id
+            current_page = _get_hosts_page(user_id)
+            text, keyboard = await _fetch_hosts_with_keyboard(user_id=user_id, page=current_page)
             await callback.message.edit_text(text, reply_markup=keyboard)
         except UnauthorizedError:
             await callback.message.edit_text(_("errors.unauthorized"), reply_markup=hosts_menu_keyboard())

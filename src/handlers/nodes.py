@@ -4,8 +4,8 @@ from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 
-from src.handlers.common import _cleanup_message, _edit_text_safe, _not_admin, _send_clean_message
-from src.handlers.state import PENDING_INPUT
+from src.handlers.common import _cleanup_message, _edit_text_safe, _get_target_user_id, _not_admin, _send_clean_message
+from src.handlers.state import NODES_PAGE_BY_USER, NODES_PAGE_SIZE, PENDING_INPUT
 from src.keyboards.main_menu import main_menu_keyboard, nodes_menu_keyboard
 from src.keyboards.navigation import NavTarget, nav_keyboard, nav_row
 from src.keyboards.node_actions import node_actions_keyboard
@@ -48,13 +48,21 @@ async def _fetch_nodes_text() -> str:
         return "\n".join(lines)
     except UnauthorizedError:
         return _("errors.unauthorized")
-    except ApiClientError:
+    except ApiClientError as exc:
         logger.exception("⚠️ Nodes fetch failed")
-        return _("errors.generic")
+        from src.handlers.common import _get_error_message
+        return _get_error_message(exc)
 
 
-async def _fetch_nodes_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
-    """Получает текст списка нод со статистикой и клавиатуру с кнопками для каждой ноды."""
+def _get_nodes_page(user_id: int | None) -> int:
+    """Получает текущую страницу нод для пользователя."""
+    if user_id is None:
+        return 0
+    return max(NODES_PAGE_BY_USER.get(user_id, 0), 0)
+
+
+async def _fetch_nodes_with_keyboard(user_id: int | None = None, page: int = 0) -> tuple[str, InlineKeyboardMarkup]:
+    """Получает текст списка нод со статистикой и клавиатуру с кнопками для каждой ноды с пагинацией."""
     try:
         data = await api_client.get_nodes()
         nodes = data.get("response", [])
@@ -71,9 +79,20 @@ async def _fetch_nodes_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
         total_users = sum(n.get("usersOnline", 0) or 0 for n in nodes)
         total_traffic = sum(n.get("trafficUsedBytes", 0) or 0 for n in nodes)
 
+        # Пагинация
+        total_pages = max(ceil(total_nodes / NODES_PAGE_SIZE), 1)
+        page = min(max(page, 0), total_pages - 1)
+        start = page * NODES_PAGE_SIZE
+        end = start + NODES_PAGE_SIZE
+        page_nodes = sorted_nodes[start:end]
+
+        # Сохраняем текущую страницу
+        if user_id is not None:
+            NODES_PAGE_BY_USER[user_id] = page
+
         # Формируем текст со статистикой и списком нод
         lines = [
-            _("node.list_title").format(total=total_nodes),
+            _("node.list_title").format(total=total_nodes, page=page + 1, pages=total_pages),
             "",
             _("node.list_stats").format(
                 total=total_nodes,
@@ -88,7 +107,7 @@ async def _fetch_nodes_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
 
         rows: list[list[InlineKeyboardButton]] = []
 
-        for node in sorted_nodes[:20]:  # Увеличиваем до 20 нод
+        for node in page_nodes:
             status = "DISABLED" if node.get("isDisabled") else ("ONLINE" if node.get("isConnected") else "OFFLINE")
             status_emoji = "🟢" if status == "ONLINE" else ("🟡" if status == "DISABLED" else "🔴")
             address = f"{node.get('address', 'n/a')}:{node.get('port') or '—'}"
@@ -108,19 +127,27 @@ async def _fetch_nodes_with_keyboard() -> tuple[str, InlineKeyboardMarkup]:
             # Добавляем кнопку для редактирования ноды
             rows.append([InlineKeyboardButton(text=f"{status_emoji} {name}", callback_data=f"node_edit:{node_uuid}")])
 
-        if len(nodes) > 20:
-            lines.append(_("node.list_more").format(count=len(nodes) - 20))
+        # Добавляем кнопки пагинации
+        if total_pages > 1:
+            nav_buttons = []
+            if page > 0:
+                nav_buttons.append(InlineKeyboardButton(text=_("sub.prev_page"), callback_data=f"nodes:page:{page-1}"))
+            if page + 1 < total_pages:
+                nav_buttons.append(InlineKeyboardButton(text=_("sub.next_page"), callback_data=f"nodes:page:{page+1}"))
+            if nav_buttons:
+                rows.append(nav_buttons)
 
-        # Добавляем только кнопку "Назад" к списку нод
+        # Добавляем кнопку "Назад" к списку нод
         rows.append(nav_row(NavTarget.NODES_LIST))
 
         keyboard = InlineKeyboardMarkup(inline_keyboard=rows)
         return "\n".join(lines), keyboard
     except UnauthorizedError:
         return _("errors.unauthorized"), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.NODES_LIST)])
-    except ApiClientError:
+    except ApiClientError as exc:
         logger.exception("⚠️ Nodes fetch failed")
-        return _("errors.generic"), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.NODES_LIST)])
+        from src.handlers.common import _get_error_message
+        return _get_error_message(exc), InlineKeyboardMarkup(inline_keyboard=[nav_row(NavTarget.NODES_LIST)])
 
 
 async def _fetch_nodes_realtime_text() -> str:
@@ -909,7 +936,9 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
     if action == "list" or action == "refresh":
         # Обновляем список нод
         try:
-            text, keyboard = await _fetch_nodes_with_keyboard()
+            user_id = callback.from_user.id
+            current_page = _get_nodes_page(user_id)
+            text, keyboard = await _fetch_nodes_with_keyboard(user_id=user_id, page=current_page)
             try:
                 await callback.message.edit_text(text, reply_markup=keyboard)
                 if action == "refresh":
@@ -928,6 +957,25 @@ async def cb_nodes_actions(callback: CallbackQuery) -> None:
             logger.exception("❌ Nodes fetch failed")
             from src.keyboards.nodes_menu import nodes_list_keyboard
 
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_list_keyboard())
+    elif action == "page":
+        # Обработчик пагинации списка нод
+        if len(parts) < 3:
+            return
+        try:
+            page = int(parts[2])
+        except ValueError:
+            page = 0
+        user_id = callback.from_user.id
+        try:
+            text, keyboard = await _fetch_nodes_with_keyboard(user_id=user_id, page=max(page, 0))
+            await callback.message.edit_text(text, reply_markup=keyboard)
+        except UnauthorizedError:
+            from src.keyboards.nodes_menu import nodes_list_keyboard
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nodes_list_keyboard())
+        except ApiClientError:
+            logger.exception("❌ Nodes fetch failed")
+            from src.keyboards.nodes_menu import nodes_list_keyboard
             await callback.message.edit_text(_("errors.generic"), reply_markup=nodes_list_keyboard())
     elif action == "create":
         # Начинаем создание ноды

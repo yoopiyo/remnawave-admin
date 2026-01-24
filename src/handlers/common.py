@@ -5,6 +5,7 @@ from aiogram.types import CallbackQuery, InlineKeyboardMarkup, Message
 from aiogram.utils.i18n import gettext as _
 
 from src.handlers.state import ADMIN_COMMAND_DELETE_DELAY, LAST_BOT_MESSAGES
+from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError
 from src.utils.auth import is_admin
 from src.utils.logger import logger
 
@@ -143,4 +144,28 @@ async def _edit_text_safe(
         except Exception:
             pass
         await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
+
+
+def _get_error_message(exc: Exception) -> str:
+    """Возвращает понятное сообщение об ошибке на основе типа исключения."""
+    from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError
+    
+    if isinstance(exc, UnauthorizedError):
+        return _("errors.unauthorized")
+    if isinstance(exc, NotFoundError):
+        return _("errors.not_found")
+    if isinstance(exc, ApiClientError):
+        # Проверяем, есть ли более конкретная информация в сообщении об ошибке
+        error_str = str(exc).lower()
+        if "timeout" in error_str or "read timeout" in error_str:
+            return _("errors.timeout_error")
+        if "connect" in error_str or "connection" in error_str:
+            return _("errors.network_error")
+        if "rate limit" in error_str or "429" in error_str:
+            return _("errors.rate_limit")
+        if "500" in error_str or "502" in error_str or "503" in error_str:
+            return _("errors.server_error")
+        return _("errors.generic")
+    # Для других типов ошибок возвращаем общее сообщение
+    return _("errors.generic")
 
