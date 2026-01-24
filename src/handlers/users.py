@@ -36,6 +36,7 @@ from src.keyboards.user_stats import user_stats_keyboard
 from src.keyboards.hwid_devices import hwid_devices_keyboard
 from src.keyboards.hwid_menu import hwid_management_keyboard
 from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError, api_client
+from src.services.database import db_service
 from src.utils.formatters import (
     _esc,
     build_created_user,
@@ -118,17 +119,84 @@ def _format_user_choice(user: dict) -> str:
 
 
 async def _fetch_user(query: str) -> dict:
-    """Получает пользователя по запросу (username или telegram_id)."""
+    """
+    Получает пользователя по запросу (username или telegram_id).
+    
+    Сначала пытается найти в локальной БД для быстрого ответа,
+    если не найден - запрашивает из API.
+    """
+    import json
+    
+    # Попробуем сначала найти в БД
+    if db_service.is_connected:
+        try:
+            db_user = None
+            if query.isdigit():
+                db_user = await db_service.get_user_by_telegram_id(int(query))
+            else:
+                db_user = await db_service.get_user_by_username(query)
+            
+            if db_user and db_user.get("raw_data"):
+                # Используем данные из БД
+                raw_data = db_user["raw_data"]
+                if isinstance(raw_data, str):
+                    return {"response": json.loads(raw_data)}
+                return {"response": raw_data}
+        except Exception as e:
+            logger.debug("Database lookup failed, using API: %s", e)
+    
+    # Fallback на API
     if query.isdigit():
         return await api_client.get_user_by_telegram_id(int(query))
     return await api_client.get_user_by_username(query)
 
 
 async def _search_users(query: str) -> list[dict]:
-    """Ищет пользователей по запросу."""
+    """
+    Ищет пользователей по запросу.
+    
+    Использует локальную БД для быстрого поиска, если она доступна.
+    Если БД недоступна - fallback на API с пагинацией.
+    """
     search_term = query.strip()
     if not search_term:
         return []
+    
+    # Попробуем сначала использовать локальную БД (если подключена и синхронизирована)
+    if db_service.is_connected:
+        try:
+            db_results = await db_service.search_users(search_term, limit=MAX_SEARCH_RESULTS)
+            if db_results:
+                # Преобразуем результаты из БД в формат API
+                matches = []
+                for row in db_results:
+                    # Если есть raw_data - используем его, иначе собираем из полей
+                    if row.get("raw_data"):
+                        import json
+                        if isinstance(row["raw_data"], str):
+                            matches.append(json.loads(row["raw_data"]))
+                        else:
+                            matches.append(row["raw_data"])
+                    else:
+                        # Собираем базовые данные из полей БД
+                        matches.append({
+                            "uuid": str(row.get("uuid", "")),
+                            "shortUuid": row.get("short_uuid"),
+                            "username": row.get("username"),
+                            "email": row.get("email"),
+                            "telegramId": row.get("telegram_id"),
+                            "status": row.get("status"),
+                            "expireAt": row.get("expire_at").isoformat() if row.get("expire_at") else None,
+                            "trafficLimitBytes": row.get("traffic_limit_bytes"),
+                            "usedTrafficBytes": row.get("used_traffic_bytes"),
+                            "hwidDeviceLimit": row.get("hwid_device_limit"),
+                        })
+                logger.debug("Found %d users in database for query: %s", len(matches), search_term)
+                return matches
+        except Exception as e:
+            logger.warning("Database search failed, falling back to API: %s", e)
+    
+    # Fallback на API (оригинальная логика)
     normalized = search_term.lower()
     matches: list[dict] = []
     start = 0

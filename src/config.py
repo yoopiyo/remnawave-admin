@@ -1,7 +1,7 @@
 import os
 from functools import lru_cache
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from dotenv import load_dotenv
 from pydantic import AnyHttpUrl, Field, field_validator
@@ -22,6 +22,17 @@ class Settings(BaseSettings):
     notifications_topic_id: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_ID")
     webhook_port: int = Field(default=8080, alias="WEBHOOK_PORT")
     webhook_secret: str | None = Field(default=None, alias="WEBHOOK_SECRET")
+    
+    # Database configuration
+    database_url: str | None = Field(default=None, alias="DATABASE_URL")
+    db_pool_min_size: int = Field(default=2, alias="DB_POOL_MIN_SIZE")
+    db_pool_max_size: int = Field(default=10, alias="DB_POOL_MAX_SIZE")
+    sync_interval_seconds: int = Field(default=300, alias="SYNC_INTERVAL_SECONDS")
+    
+    @property
+    def database_enabled(self) -> bool:
+        """Проверяет, включена ли база данных."""
+        return bool(self.database_url)
 
     @field_validator("notifications_chat_id", mode="before")
     @classmethod

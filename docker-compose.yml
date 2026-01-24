@@ -14,12 +14,41 @@ services:
       NOTIFICATIONS_TOPIC_ID: ${NOTIFICATIONS_TOPIC_ID:-}
       WEBHOOK_PORT: ${WEBHOOK_PORT:-8080}
       WEBHOOK_SECRET: ${WEBHOOK_SECRET:-}
+      # Database configuration (optional - remove DATABASE_URL to disable)
+      DATABASE_URL: ${DATABASE_URL:-}
+      DB_POOL_MIN_SIZE: ${DB_POOL_MIN_SIZE:-2}
+      DB_POOL_MAX_SIZE: ${DB_POOL_MAX_SIZE:-10}
+      SYNC_INTERVAL_SECONDS: ${SYNC_INTERVAL_SECONDS:-300}
     ports:
       - "${WEBHOOK_PORT:-8080}:${WEBHOOK_PORT:-8080}"
     networks:
       - remnawave-network
+    depends_on:
+      remnawave-admin-db:
+        condition: service_healthy
     # Бот будет ждать, пока API будет доступен (но не блокирует старт, если API еще не готов)
     # Повторные попытки подключения реализованы в коде бота
+
+  remnawave-admin-db:
+    container_name: remnawave-admin-db
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:?POSTGRES_USER is required}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD is required}
+      POSTGRES_DB: ${POSTGRES_DB:-remnawave_bot}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    networks:
+      - remnawave-network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB:-remnawave_bot}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:
 
 networks:
   remnawave-network:

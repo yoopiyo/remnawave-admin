@@ -351,7 +351,19 @@ class RemnawaveApiClient:
     async def get_user_by_uuid(self, user_uuid: str) -> dict:
         return await self._get(f"/api/users/{user_uuid}")
 
-    async def get_users(self, start: int = 0, size: int = 100) -> dict:
+    async def get_users(self, start: int = 0, size: int = 100, page: int | None = None, skip_cache: bool = False) -> dict:
+        """
+        Получает список пользователей с пагинацией.
+        
+        Args:
+            start: Начальный индекс (устаревший параметр, используйте page)
+            size: Количество записей на странице
+            page: Номер страницы (1-based, если указан - используется вместо start)
+            skip_cache: Пропустить кеш (для синхронизации)
+        """
+        # Если указан page, вычисляем start
+        if page is not None:
+            start = (page - 1) * size
         return await self._get("/api/users", params={"start": start, "size": size})
 
     async def update_user(self, user_uuid: str, **fields) -> dict:
@@ -504,15 +516,21 @@ class RemnawaveApiClient:
         return data
 
     # --- Nodes ---
-    async def get_nodes(self, use_cache: bool = True) -> dict:
-        """Получает список нод с кэшированием."""
-        if use_cache:
+    async def get_nodes(self, use_cache: bool = True, skip_cache: bool = False) -> dict:
+        """Получает список нод с кэшированием.
+        
+        Args:
+            use_cache: Использовать кеш (если есть)
+            skip_cache: Пропустить кеш полностью (для синхронизации)
+        """
+        if use_cache and not skip_cache:
             cached = await cache.get(CacheKeys.NODES)
             if cached is not None:
                 return cached
         
         data = await self._get("/api/nodes")
-        await cache.set(CacheKeys.NODES, data, CacheManager.NODES_TTL)
+        if not skip_cache:
+            await cache.set(CacheKeys.NODES, data, CacheManager.NODES_TTL)
         return data
 
     async def get_node(self, node_uuid: str, use_cache: bool = True) -> dict:
@@ -690,15 +708,21 @@ class RemnawaveApiClient:
         )
 
     # --- Hosts ---
-    async def get_hosts(self, use_cache: bool = True) -> dict:
-        """Получает список хостов с кэшированием."""
-        if use_cache:
+    async def get_hosts(self, use_cache: bool = True, skip_cache: bool = False) -> dict:
+        """Получает список хостов с кэшированием.
+        
+        Args:
+            use_cache: Использовать кеш (если есть)
+            skip_cache: Пропустить кеш полностью (для синхронизации)
+        """
+        if use_cache and not skip_cache:
             cached = await cache.get(CacheKeys.HOSTS)
             if cached is not None:
                 return cached
         
         data = await self._get("/api/hosts")
-        await cache.set(CacheKeys.HOSTS, data, CacheManager.HOSTS_TTL)
+        if not skip_cache:
+            await cache.set(CacheKeys.HOSTS, data, CacheManager.HOSTS_TTL)
         return data
 
     async def get_host(self, host_uuid: str, use_cache: bool = True) -> dict:
@@ -947,15 +971,21 @@ class RemnawaveApiClient:
             raise ApiClientError from exc
 
     # --- Config profiles ---
-    async def get_config_profiles(self, use_cache: bool = True) -> dict:
-        """Получает список профилей конфигурации с кэшированием."""
-        if use_cache:
+    async def get_config_profiles(self, use_cache: bool = True, skip_cache: bool = False) -> dict:
+        """Получает список профилей конфигурации с кэшированием.
+        
+        Args:
+            use_cache: Использовать кеш (если есть)
+            skip_cache: Пропустить кеш полностью (для синхронизации)
+        """
+        if use_cache and not skip_cache:
             cached = await cache.get(CacheKeys.CONFIG_PROFILES)
             if cached is not None:
                 return cached
         
         data = await self._get("/api/config-profiles")
-        await cache.set(CacheKeys.CONFIG_PROFILES, data, CacheManager.CONFIG_PROFILES_TTL)
+        if not skip_cache:
+            await cache.set(CacheKeys.CONFIG_PROFILES, data, CacheManager.CONFIG_PROFILES_TTL)
         return data
 
     async def get_config_profile_computed(self, profile_uuid: str) -> dict:

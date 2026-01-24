@@ -13,6 +13,7 @@ RUN apt-get update \
         curl \
         build-essential \
         python3-dev \
+        libpq-dev \
     && rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
@@ -20,5 +21,7 @@ RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
 
 COPY src ./src
 COPY locales ./locales
+COPY alembic ./alembic
+COPY alembic.ini .
 
 CMD ["python", "-m", "src.main"]

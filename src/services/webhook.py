@@ -10,6 +10,7 @@ from aiogram import Bot
 
 from src.config import get_settings
 from src.services.api_client import api_client, NotFoundError
+from src.services.sync import sync_service
 from src.utils.logger import logger
 from src.utils.notifications import (
     send_user_notification,
@@ -209,6 +210,12 @@ async def remnawave_webhook(request: Request):
         if not bot:
             logger.error("Bot instance not found in app state")
             raise HTTPException(status_code=500, detail="Bot instance not available")
+        
+        # Синхронизируем данные в БД (если БД подключена)
+        try:
+            await sync_service.handle_webhook_event(event, event_data)
+        except Exception as sync_exc:
+            logger.warning("Failed to sync webhook event to database: %s", sync_exc)
         
         # Обрабатываем события по категориям
         if event.startswith("user."):

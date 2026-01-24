@@ -8,6 +8,8 @@ import uvicorn
 
 from src.config import get_settings
 from src.services.api_client import api_client
+from src.services.database import db_service
+from src.services.sync import sync_service
 from src.services.health_check import PanelHealthChecker
 from src.services.webhook import app as webhook_app
 from src.utils.auth import AdminMiddleware
@@ -139,6 +141,21 @@ async def main() -> None:
             "Make sure the API server is running and accessible."
         )
         sys.exit(1)
+    
+    # Подключаемся к базе данных (если настроена)
+    db_connected = False
+    if settings.database_enabled:
+        logger.info("🗄️ Connecting to PostgreSQL database...")
+        db_connected = await db_service.connect()
+        if db_connected:
+            logger.info("✅ Database connection established")
+        else:
+            logger.warning(
+                "⚠️ Database connection failed. Bot will work without local caching. "
+                "Check DATABASE_URL in your .env file."
+            )
+    else:
+        logger.info("🗄️ Database not configured (DATABASE_URL not set), running without local cache")
 
     # parse_mode is left as default (None) to avoid HTML parsing issues with plain text translations
     bot = Bot(token=settings.bot_token)
@@ -173,11 +190,21 @@ async def main() -> None:
     
     # Сохраняем health checker в состоянии диспетчера для доступа из обработчиков
     dp["health_checker"] = health_checker
+    
+    # Запускаем сервис синхронизации (если БД подключена)
+    if db_connected:
+        logger.info("🔄 Starting data sync service...")
+        await sync_service.start()
 
     logger.info("🤖 Starting bot")
     try:
         await dp.start_polling(bot, allowed_updates=dp.resolve_used_update_types())
     finally:
+        # Останавливаем sync service
+        if sync_service.is_running:
+            logger.info("🔄 Stopping sync service")
+            await sync_service.stop()
+        
         # Останавливаем health checker
         logger.info("🏥 Stopping panel health checker")
         health_checker.stop()
@@ -195,6 +222,11 @@ async def main() -> None:
                 await webhook_task
             except asyncio.CancelledError:
                 pass
+        
+        # Закрываем подключение к базе данных
+        if db_service.is_connected:
+            logger.info("🗄️ Closing database connection")
+            await db_service.disconnect()
 
 
 if __name__ == "__main__":
