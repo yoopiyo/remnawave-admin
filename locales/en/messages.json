@@ -85,7 +85,22 @@
   "api": {},
   "errors": {
     "unauthorized": "⛔️ Unauthorized. Check your API token.",
-    "generic": "⚠️ Something went wrong. Try again later."
+    "generic": "⚠️ Something went wrong. Try again later.",
+    "not_found": "❌ Resource not found. It may have been deleted.",
+    "network_error": "🌐 Network error. Could not connect to server.",
+    "timeout_error": "⏱ Request timed out waiting for server response.",
+    "server_error": "🔴 Server error. Service temporarily unavailable.",
+    "validation_error": "⚠️ Data validation error. Check your input.",
+    "rate_limit": "🚦 Rate limit exceeded.",
+    "hint_unauthorized": "Check the API token in bot settings",
+    "hint_not_found": "Make sure the resource exists and hasn't been deleted",
+    "hint_network": "Check internet connection and API server availability",
+    "hint_timeout": "Server is overloaded or responding slowly. Try later",
+    "hint_server": "Server is temporarily unavailable. Try again in a few minutes",
+    "hint_validation": "Check the format of input data",
+    "hint_validation_field": "Check value for field: {field}",
+    "hint_rate_limit": "Wait 30-60 seconds and try again",
+    "hint_generic": "Try again later or contact administrator"
   },
   "health": {
     "title": "🩺 System health",

@@ -8,15 +8,69 @@ from src.utils.logger import logger
 
 
 class ApiClientError(Exception):
-    """Generic API error."""
+    """Generic API error with error code support."""
+    
+    def __init__(self, message: str = "", code: str = "ERR_API_000", hint: str = ""):
+        self.message = message
+        self.code = code
+        self.hint = hint
+        super().__init__(message)
+    
+    def __str__(self) -> str:
+        return self.message or super().__str__()
 
 
 class NotFoundError(ApiClientError):
-    """404 error."""
+    """404 error - resource not found."""
+    
+    def __init__(self, message: str = "Resource not found"):
+        super().__init__(message, code="ERR_404_001", hint="Check if the resource exists")
 
 
 class UnauthorizedError(ApiClientError):
-    """401 error."""
+    """401/403 error - authentication/authorization failed."""
+    
+    def __init__(self, message: str = "Unauthorized"):
+        super().__init__(message, code="ERR_AUTH_001", hint="Check API token in settings")
+
+
+class NetworkError(ApiClientError):
+    """Network connectivity error."""
+    
+    def __init__(self, message: str = "Network error"):
+        super().__init__(message, code="ERR_NET_001", hint="Check network connection and API server availability")
+
+
+class TimeoutError(ApiClientError):
+    """Request timeout error."""
+    
+    def __init__(self, message: str = "Request timeout"):
+        super().__init__(message, code="ERR_TIMEOUT_001", hint="Server is slow or overloaded, try again later")
+
+
+class RateLimitError(ApiClientError):
+    """Rate limit exceeded error."""
+    
+    def __init__(self, message: str = "Rate limit exceeded"):
+        super().__init__(message, code="ERR_RATE_001", hint="Wait a moment before retrying")
+
+
+class ServerError(ApiClientError):
+    """Server error (5xx)."""
+    
+    def __init__(self, message: str = "Server error", status_code: int = 500):
+        self.status_code = status_code
+        code = f"ERR_SRV_{status_code}"
+        super().__init__(message, code=code, hint="Server is temporarily unavailable")
+
+
+class ValidationError(ApiClientError):
+    """Data validation error."""
+    
+    def __init__(self, message: str = "Validation error", field: str = ""):
+        self.field = field
+        hint = f"Check value for field: {field}" if field else "Check input data format"
+        super().__init__(message, code="ERR_VAL_001", hint=hint)
 
 
 class RemnawaveApiClient:
@@ -81,9 +135,13 @@ class RemnawaveApiClient:
                 log_api_error("GET", url, exc, status_code=exc.response.status_code)
                 status = exc.response.status_code
                 if status in (401, 403):
-                    raise UnauthorizedError from exc
+                    raise UnauthorizedError(f"Access denied: {status}") from exc
                 if status == 404:
-                    raise NotFoundError from exc
+                    raise NotFoundError(f"Resource not found: {url}") from exc
+                if status == 429:
+                    raise RateLimitError(f"Rate limit exceeded on {url}") from exc
+                if status >= 500:
+                    raise ServerError(f"Server error {status} on {url}", status_code=status) from exc
                 # 308 Permanent Redirect обычно означает HTTP -> HTTPS
                 if status == 308:
                     https_url = full_url.replace("http://", "https://")
@@ -94,30 +152,40 @@ class RemnawaveApiClient:
                         full_url, https_url
                     )
                 logger.warning("API error %s on GET %s: %s", status, full_url, exc.response.text)
-                raise ApiClientError from exc
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
+            except httpx.ReadTimeout as exc:
                 last_exc = exc
                 error_type = type(exc).__name__
                 if attempt < max_retries - 1:
-                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "HTTP client error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        "Timeout on GET %s: %s, retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Timeout on GET %s after %d attempts", full_url, max_retries)
+                    raise TimeoutError(f"Request timeout on {url}") from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
+                last_exc = exc
+                error_type = type(exc).__name__
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)
+                    logger.warning(
+                        "Network error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
                         full_url, exc, error_type, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error(
-                        "HTTP client error on GET %s: %s (%s) - max retries reached. "
-                        "Server may be overloaded or network unstable.",
-                        full_url, exc, error_type
-                    )
+                    logger.error("Network error on GET %s after %d attempts: %s", full_url, max_retries, exc)
+                    raise NetworkError(f"Connection failed to {url}") from exc
             except httpx.HTTPError as exc:
                 error_type = type(exc).__name__
                 logger.warning("HTTP client error on GET %s: %s (%s)", full_url, exc, error_type)
-                raise ApiClientError from exc
+                raise ApiClientError(f"HTTP error: {error_type}", code="ERR_HTTP_001") from exc
         
-        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
-        raise ApiClientError(f"Failed to get {full_url} after {max_retries} attempts") from last_exc
+        # Если все попытки исчерпаны, выбрасываем ошибку сети
+        raise NetworkError(f"Failed to connect to {url} after {max_retries} attempts") from last_exc
 
     async def _post(self, url: str, json: dict | None = None, max_retries: int = 3) -> dict:
         """Выполняет POST запрос с retry для сетевых ошибок."""
@@ -141,34 +209,57 @@ class RemnawaveApiClient:
                 log_api_error("POST", url, exc, status_code=exc.response.status_code)
                 status = exc.response.status_code
                 if status in (401, 403):
-                    raise UnauthorizedError from exc
+                    raise UnauthorizedError(f"Access denied: {status}") from exc
                 if status == 404:
-                    raise NotFoundError from exc
+                    raise NotFoundError(f"Resource not found: {url}") from exc
+                if status == 429:
+                    raise RateLimitError(f"Rate limit exceeded on {url}") from exc
+                if status == 400 or status == 422:
+                    # Пробуем извлечь информацию об ошибке валидации из ответа
+                    try:
+                        error_data = exc.response.json()
+                        error_msg = error_data.get("message", str(exc))
+                        field = error_data.get("field", "")
+                        raise ValidationError(error_msg, field=field) from exc
+                    except (ValueError, KeyError):
+                        raise ValidationError(f"Validation error on {url}") from exc
+                if status >= 500:
+                    raise ServerError(f"Server error {status} on {url}", status_code=status) from exc
                 logger.warning("API error %s on POST %s: %s", status, full_url, exc.response.text)
-                raise ApiClientError from exc
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
+            except httpx.ReadTimeout as exc:
                 last_exc = exc
                 error_type = type(exc).__name__
                 if attempt < max_retries - 1:
-                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "HTTP client error on POST %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        "Timeout on POST %s: %s, retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Timeout on POST %s after %d attempts", full_url, max_retries)
+                    raise TimeoutError(f"Request timeout on {url}") from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
+                last_exc = exc
+                error_type = type(exc).__name__
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)
+                    logger.warning(
+                        "Network error on POST %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
                         full_url, exc, error_type, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error(
-                        "HTTP client error on POST %s: %s (%s) - max retries reached. "
-                        "Server may be overloaded or network unstable.",
-                        full_url, exc, error_type
-                    )
+                    logger.error("Network error on POST %s after %d attempts: %s", full_url, max_retries, exc)
+                    raise NetworkError(f"Connection failed to {url}") from exc
             except httpx.HTTPError as exc:
                 error_type = type(exc).__name__
                 logger.warning("HTTP client error on POST %s: %s (%s)", full_url, exc, error_type)
-                raise ApiClientError from exc
+                raise ApiClientError(f"HTTP error: {error_type}", code="ERR_HTTP_001") from exc
         
-        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
-        raise ApiClientError(f"Failed to post {full_url} after {max_retries} attempts") from last_exc
+        # Если все попытки исчерпаны, выбрасываем ошибку сети
+        raise NetworkError(f"Failed to connect to {url} after {max_retries} attempts") from last_exc
 
     async def _patch(self, url: str, json: dict | None = None, max_retries: int = 3) -> dict:
         """Выполняет PATCH запрос с retry для сетевых ошибок."""
@@ -192,34 +283,57 @@ class RemnawaveApiClient:
                 log_api_error("PATCH", url, exc, status_code=exc.response.status_code)
                 status = exc.response.status_code
                 if status in (401, 403):
-                    raise UnauthorizedError from exc
+                    raise UnauthorizedError(f"Access denied: {status}") from exc
                 if status == 404:
-                    raise NotFoundError from exc
+                    raise NotFoundError(f"Resource not found: {url}") from exc
+                if status == 429:
+                    raise RateLimitError(f"Rate limit exceeded on {url}") from exc
+                if status == 400 or status == 422:
+                    # Пробуем извлечь информацию об ошибке валидации из ответа
+                    try:
+                        error_data = exc.response.json()
+                        error_msg = error_data.get("message", str(exc))
+                        field = error_data.get("field", "")
+                        raise ValidationError(error_msg, field=field) from exc
+                    except (ValueError, KeyError):
+                        raise ValidationError(f"Validation error on {url}") from exc
+                if status >= 500:
+                    raise ServerError(f"Server error {status} on {url}", status_code=status) from exc
                 logger.warning("API error %s on PATCH %s: %s", status, full_url, exc.response.text)
-                raise ApiClientError from exc
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
+            except httpx.ReadTimeout as exc:
                 last_exc = exc
                 error_type = type(exc).__name__
                 if attempt < max_retries - 1:
-                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "HTTP client error on PATCH %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        "Timeout on PATCH %s: %s, retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Timeout on PATCH %s after %d attempts", full_url, max_retries)
+                    raise TimeoutError(f"Request timeout on {url}") from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
+                last_exc = exc
+                error_type = type(exc).__name__
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)
+                    logger.warning(
+                        "Network error on PATCH %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
                         full_url, exc, error_type, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error(
-                        "HTTP client error on PATCH %s: %s (%s) - max retries reached. "
-                        "Server may be overloaded or network unstable.",
-                        full_url, exc, error_type
-                    )
+                    logger.error("Network error on PATCH %s after %d attempts: %s", full_url, max_retries, exc)
+                    raise NetworkError(f"Connection failed to {url}") from exc
             except httpx.HTTPError as exc:
                 error_type = type(exc).__name__
                 logger.warning("HTTP client error on PATCH %s: %s (%s)", full_url, exc, error_type)
-                raise ApiClientError from exc
+                raise ApiClientError(f"HTTP error: {error_type}", code="ERR_HTTP_001") from exc
         
-        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
-        raise ApiClientError(f"Failed to patch {full_url} after {max_retries} attempts") from last_exc
+        # Если все попытки исчерпаны, выбрасываем ошибку сети
+        raise NetworkError(f"Failed to connect to {url} after {max_retries} attempts") from last_exc
 
     # --- Settings ---
     async def get_settings(self) -> dict:
@@ -283,34 +397,47 @@ class RemnawaveApiClient:
             except HTTPStatusError as exc:
                 status = exc.response.status_code
                 if status in (401, 403):
-                    raise UnauthorizedError from exc
+                    raise UnauthorizedError(f"Access denied: {status}") from exc
                 if status == 404:
-                    raise NotFoundError from exc
+                    raise NotFoundError(f"Resource not found: {url}") from exc
+                if status == 429:
+                    raise RateLimitError(f"Rate limit exceeded on {url}") from exc
+                if status >= 500:
+                    raise ServerError(f"Server error {status} on {url}", status_code=status) from exc
                 logger.warning("API error %s on GET %s: %s", status, full_url, exc.response.text)
-                raise ApiClientError from exc
-            except (httpx.RemoteProtocolError, httpx.ConnectError, httpx.ReadTimeout) as exc:
+                raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
+            except httpx.ReadTimeout as exc:
+                last_exc = exc
+                if attempt < max_retries - 1:
+                    delay = 0.5 * (2 ** attempt)
+                    logger.warning(
+                        "Timeout on GET %s: %s, retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, delay, attempt + 1, max_retries
+                    )
+                    await asyncio.sleep(delay)
+                else:
+                    logger.error("Timeout on GET %s after %d attempts", full_url, max_retries)
+                    raise TimeoutError(f"Request timeout on {url}") from exc
+            except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
                 last_exc = exc
                 error_type = type(exc).__name__
                 if attempt < max_retries - 1:
-                    delay = 0.5 * (2 ** attempt)  # Экспоненциальная задержка: 0.5s, 1s, 2s
+                    delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "HTTP client error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
+                        "Network error on GET %s: %s (%s), retrying in %.1fs (attempt %d/%d)",
                         full_url, exc, error_type, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error(
-                        "HTTP client error on GET %s: %s (%s) - max retries reached. "
-                        "Server may be overloaded or network unstable.",
-                        full_url, exc, error_type
-                    )
+                    logger.error("Network error on GET %s after %d attempts: %s", full_url, max_retries, exc)
+                    raise NetworkError(f"Connection failed to {url}") from exc
             except httpx.HTTPError as exc:
                 error_type = type(exc).__name__
                 logger.warning("HTTP client error on GET %s: %s (%s)", full_url, exc, error_type)
-                raise ApiClientError from exc
+                raise ApiClientError(f"HTTP error: {error_type}", code="ERR_HTTP_001") from exc
         
-        # Если все попытки исчерпаны, выбрасываем последнюю ошибку
-        raise ApiClientError(f"Failed to get {full_url} after {max_retries} attempts") from last_exc
+        # Если все попытки исчерпаны, выбрасываем ошибку сети
+        raise NetworkError(f"Failed to connect to {url} after {max_retries} attempts") from last_exc
 
     async def create_user(
         self,

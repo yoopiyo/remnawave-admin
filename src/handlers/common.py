@@ -146,26 +146,84 @@ async def _edit_text_safe(
         await message.answer(text, reply_markup=reply_markup, parse_mode=parse_mode)
 
 
-def _get_error_message(exc: Exception) -> str:
-    """Возвращает понятное сообщение об ошибке на основе типа исключения."""
-    from src.services.api_client import ApiClientError, NotFoundError, UnauthorizedError
+def _get_error_message(exc: Exception, include_code: bool = True, include_hint: bool = True) -> str:
+    """Возвращает понятное сообщение об ошибке на основе типа исключения.
+    
+    Args:
+        exc: Исключение для обработки
+        include_code: Включать ли код ошибки в сообщение
+        include_hint: Включать ли подсказку по исправлению
+    
+    Returns:
+        Форматированное сообщение об ошибке
+    """
+    from src.services.api_client import (
+        ApiClientError,
+        NetworkError,
+        NotFoundError,
+        RateLimitError,
+        ServerError,
+        TimeoutError,
+        UnauthorizedError,
+        ValidationError,
+    )
+    
+    # Определяем базовое сообщение, код и подсказку
+    message = ""
+    error_code = ""
+    hint = ""
     
     if isinstance(exc, UnauthorizedError):
-        return _("errors.unauthorized")
-    if isinstance(exc, NotFoundError):
-        return _("errors.not_found")
-    if isinstance(exc, ApiClientError):
-        # Проверяем, есть ли более конкретная информация в сообщении об ошибке
-        error_str = str(exc).lower()
-        if "timeout" in error_str or "read timeout" in error_str:
-            return _("errors.timeout_error")
-        if "connect" in error_str or "connection" in error_str:
-            return _("errors.network_error")
-        if "rate limit" in error_str or "429" in error_str:
-            return _("errors.rate_limit")
-        if "500" in error_str or "502" in error_str or "503" in error_str:
-            return _("errors.server_error")
-        return _("errors.generic")
-    # Для других типов ошибок возвращаем общее сообщение
-    return _("errors.generic")
+        message = _("errors.unauthorized")
+        error_code = exc.code
+        hint = _("errors.hint_unauthorized")
+    elif isinstance(exc, NotFoundError):
+        message = _("errors.not_found")
+        error_code = exc.code
+        hint = _("errors.hint_not_found")
+    elif isinstance(exc, TimeoutError):
+        message = _("errors.timeout_error")
+        error_code = exc.code
+        hint = _("errors.hint_timeout")
+    elif isinstance(exc, NetworkError):
+        message = _("errors.network_error")
+        error_code = exc.code
+        hint = _("errors.hint_network")
+    elif isinstance(exc, RateLimitError):
+        message = _("errors.rate_limit")
+        error_code = exc.code
+        hint = _("errors.hint_rate_limit")
+    elif isinstance(exc, ServerError):
+        message = _("errors.server_error")
+        error_code = exc.code
+        hint = _("errors.hint_server")
+    elif isinstance(exc, ValidationError):
+        message = _("errors.validation_error")
+        error_code = exc.code
+        # Для ошибок валидации добавляем информацию о поле, если есть
+        if exc.field:
+            hint = _("errors.hint_validation_field").format(field=exc.field)
+        else:
+            hint = _("errors.hint_validation")
+    elif isinstance(exc, ApiClientError):
+        # Общая ошибка API
+        message = _("errors.generic")
+        error_code = getattr(exc, "code", "ERR_API_000")
+        hint = _("errors.hint_generic")
+    else:
+        # Для других типов ошибок возвращаем общее сообщение
+        message = _("errors.generic")
+        error_code = "ERR_UNK_001"
+        hint = _("errors.hint_generic")
+    
+    # Формируем финальное сообщение
+    parts = [message]
+    
+    if include_hint and hint:
+        parts.append(f"\n💡 {hint}")
+    
+    if include_code and error_code:
+        parts.append(f"\n🔢 Код: `{error_code}`")
+    
+    return "".join(parts)
 
