@@ -234,10 +234,8 @@ async def _navigate(target: Message | CallbackQuery, destination: str) -> None:
         await _send_clean_message(target, _("bot.menu"), reply_markup=nodes_menu_keyboard())
         return
     if destination == NavTarget.NODES_LIST:
-        from src.handlers.nodes import _fetch_nodes_with_keyboard
-        from src.handlers.common import _get_target_user_id
+        from src.handlers.nodes import _fetch_nodes_with_keyboard, _get_nodes_page
         user_id = _get_target_user_id(target)
-        from src.handlers.nodes import _get_nodes_page
         page = _get_nodes_page(user_id)
         text, keyboard = await _fetch_nodes_with_keyboard(user_id=user_id, page=page)
         await _send_clean_message(target, text, reply_markup=keyboard)
@@ -424,7 +422,6 @@ async def cb_subs_search(callback: CallbackQuery) -> None:
     await callback.answer()
     
     from src.handlers.state import PENDING_INPUT
-    from src.handlers.common import _get_target_user_id
     
     user_id = _get_target_user_id(callback)
     if user_id is not None:
