@@ -177,19 +177,22 @@ class SyncService:
             return 0
         
         total_synced = 0
-        page = 1
+        start = 0
         page_size = 100
         
         try:
             while True:
                 # Fetch users from API with pagination
                 response = await api_client.get_users(
-                    page=page,
+                    start=start,
                     size=page_size,
                     skip_cache=True
                 )
                 
-                users = response.get("response", [])
+                # API returns: {"response": {"users": [...], "total": N}}
+                payload = response.get("response", response)
+                users = payload.get("users") if isinstance(payload, dict) else []
+                total = payload.get("total", 0) if isinstance(payload, dict) else 0
                 
                 if not users:
                     break
@@ -202,11 +205,10 @@ class SyncService:
                     except Exception as e:
                         logger.warning("Failed to sync user %s: %s", user.get("uuid"), e)
                 
-                # Check if we've reached the last page
-                if len(users) < page_size:
+                # Check if we've reached the end
+                start += page_size
+                if start >= total or len(users) < page_size:
                     break
-                
-                page += 1
             
             # Update sync metadata
             await db_service.update_sync_metadata(
@@ -314,8 +316,10 @@ class SyncService:
         
         try:
             # Fetch all config profiles from API
+            # API returns: {"response": {"configProfiles": [...]}}
             response = await api_client.get_config_profiles(skip_cache=True)
-            profiles = response.get("response", [])
+            payload = response.get("response", {})
+            profiles = payload.get("configProfiles", []) if isinstance(payload, dict) else []
             
             total_synced = 0
             for profile in profiles:
