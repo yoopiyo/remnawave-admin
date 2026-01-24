@@ -219,7 +219,7 @@ def _pop_navigation_history(user_id: int | None) -> str | None:
 
 
 async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 0) -> None:
-    """Отправляет страницу со списком подписок с поддержкой фильтрации."""
+    """Отправляет страницу со списком подписок с поддержкой фильтрации (из БД, fallback на API)."""
     user_id = _get_target_user_id(target)
     page = max(page, 0)
     
@@ -227,40 +227,78 @@ async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 
     current_filter = SUBS_FILTER_BY_USER.get(user_id) if user_id else None
     
     try:
-        # Получаем всех пользователей для фильтрации (API не поддерживает фильтрацию)
-        if current_filter:
-            # При фильтрации получаем больше данных
-            data = await api_client.get_users(start=0, size=500)
-            payload = data.get("response", data)
-            all_users = payload.get("users") or []
-            
-            # Фильтруем пользователей по статусу
-            filtered_users = []
-            for user in all_users:
-                info = user.get("response", user)
-                status = info.get("status", "").upper()
-                if status == current_filter:
-                    filtered_users.append(user)
-            
-            total = len(filtered_users)
-            total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
-            page = min(page, total_pages - 1)
-            start = page * SUBS_PAGE_SIZE
-            end = start + SUBS_PAGE_SIZE
-            users = filtered_users[start:end]
-        else:
-            # Без фильтра используем пагинацию API
-            start = page * SUBS_PAGE_SIZE
-            data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
-            payload = data.get("response", data)
-            total = payload.get("total", 0) or 0
-            total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
-            page = min(page, total_pages - 1)
-            if page != start // SUBS_PAGE_SIZE:
+        users = []
+        total = 0
+        
+        # Сначала пробуем получить из БД
+        if db_service.is_connected:
+            try:
+                if current_filter:
+                    # С фильтром - получаем все с нужным статусом
+                    all_users = await db_service.get_all_users(
+                        limit=500,
+                        offset=0,
+                        status=current_filter,
+                        order_by="username"
+                    )
+                    total = len(all_users)
+                    total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+                    page = min(page, total_pages - 1)
+                    start = page * SUBS_PAGE_SIZE
+                    end = start + SUBS_PAGE_SIZE
+                    users = all_users[start:end]
+                    logger.debug("Fetched %d users from DB with filter %s", len(users), current_filter)
+                else:
+                    # Без фильтра - пагинация из БД
+                    total = await db_service.get_users_count()
+                    total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+                    page = min(page, total_pages - 1)
+                    start = page * SUBS_PAGE_SIZE
+                    users = await db_service.get_all_users(
+                        limit=SUBS_PAGE_SIZE,
+                        offset=start,
+                        order_by="username"
+                    )
+                    logger.debug("Fetched %d users from DB (page %d)", len(users), page)
+            except Exception as e:
+                logger.warning("DB fetch failed, fallback to API: %s", e)
+                users = []
+        
+        # Fallback на API если БД пуста или недоступна
+        if not users and not db_service.is_connected:
+            if current_filter:
+                # При фильтрации получаем больше данных
+                data = await api_client.get_users(start=0, size=500)
+                payload = data.get("response", data)
+                all_users = payload.get("users") or []
+                
+                # Фильтруем пользователей по статусу
+                filtered_users = []
+                for user in all_users:
+                    info = user.get("response", user)
+                    status = info.get("status", "").upper()
+                    if status == current_filter:
+                        filtered_users.append(user)
+                
+                total = len(filtered_users)
+                total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+                page = min(page, total_pages - 1)
+                start = page * SUBS_PAGE_SIZE
+                end = start + SUBS_PAGE_SIZE
+                users = filtered_users[start:end]
+            else:
+                # Без фильтра используем пагинацию API
                 start = page * SUBS_PAGE_SIZE
                 data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
                 payload = data.get("response", data)
-            users = payload.get("users") or []
+                total = payload.get("total", 0) or 0
+                total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
+                page = min(page, total_pages - 1)
+                if page != start // SUBS_PAGE_SIZE:
+                    start = page * SUBS_PAGE_SIZE
+                    data = await api_client.get_users(start=start, size=SUBS_PAGE_SIZE)
+                    payload = data.get("response", data)
+                users = payload.get("users") or []
     except UnauthorizedError:
         await _send_clean_message(target, _("errors.unauthorized"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
         return
@@ -285,8 +323,9 @@ async def _send_subscriptions_page(target: Message | CallbackQuery, page: int = 
             await _send_clean_message(target, _("sub.list_empty"), reply_markup=nav_keyboard(NavTarget.USERS_MENU))
         return
 
-    if not current_filter:
-        total = payload.get("total", len(users)) or len(users)
+    # total уже установлен выше (из БД или API)
+    if total == 0:
+        total = len(users)
     total_pages = max(ceil(total / SUBS_PAGE_SIZE), 1)
     rows: list[list[InlineKeyboardButton]] = []
     for user in users:
@@ -661,7 +700,7 @@ async def cb_subs_page(callback: CallbackQuery) -> None:
 
 @router.callback_query(F.data.startswith("subs:view:"))
 async def cb_subs_view(callback: CallbackQuery) -> None:
-    """Обработчик просмотра пользователя из списка подписок."""
+    """Обработчик просмотра пользователя из списка подписок (из БД, fallback на API)."""
     if await _not_admin(callback):
         return
     await callback.answer()
@@ -670,18 +709,34 @@ async def cb_subs_view(callback: CallbackQuery) -> None:
         return
     user_uuid = parts[2]
     back_to = NavTarget.SUBS_LIST
-    try:
-        user = await api_client.get_user_by_uuid(user_uuid)
-    except UnauthorizedError:
-        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
-        return
-    except NotFoundError:
-        await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
-        return
-    except ApiClientError:
-        logger.exception("User view from subs failed user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
-        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
-        return
+    
+    user = None
+    
+    # Сначала пробуем получить из БД
+    if db_service.is_connected:
+        try:
+            db_user = await db_service.get_user_by_uuid(user_uuid)
+            if db_user:
+                # Данные из БД уже в формате API
+                user = {"response": db_user}
+                logger.debug("User %s fetched from database", user_uuid)
+        except Exception as e:
+            logger.warning("DB fetch failed for user %s, fallback to API: %s", user_uuid, e)
+    
+    # Fallback на API если не найден в БД
+    if not user:
+        try:
+            user = await api_client.get_user_by_uuid(user_uuid)
+        except UnauthorizedError:
+            await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+            return
+        except NotFoundError:
+            await callback.message.edit_text(_("user.not_found"), reply_markup=nav_keyboard(back_to))
+            return
+        except ApiClientError:
+            logger.exception("User view from subs failed user_uuid=%s actor_id=%s", user_uuid, callback.from_user.id)
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+            return
 
     await _send_user_summary(callback, user, back_to=back_to)
 

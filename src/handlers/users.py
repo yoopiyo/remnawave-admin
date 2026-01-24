@@ -125,8 +125,6 @@ async def _fetch_user(query: str) -> dict:
     Сначала пытается найти в локальной БД для быстрого ответа,
     если не найден - запрашивает из API.
     """
-    import json
-    
     # Попробуем сначала найти в БД
     if db_service.is_connected:
         try:
@@ -136,12 +134,9 @@ async def _fetch_user(query: str) -> dict:
             else:
                 db_user = await db_service.get_user_by_username(query)
             
-            if db_user and db_user.get("raw_data"):
-                # Используем данные из БД
-                raw_data = db_user["raw_data"]
-                if isinstance(raw_data, str):
-                    return {"response": json.loads(raw_data)}
-                return {"response": raw_data}
+            if db_user:
+                # Данные из БД уже в формате API (через _db_row_to_api_format)
+                return {"response": db_user}
         except Exception as e:
             logger.debug("Database lookup failed, using API: %s", e)
     
@@ -167,32 +162,9 @@ async def _search_users(query: str) -> list[dict]:
         try:
             db_results = await db_service.search_users(search_term, limit=MAX_SEARCH_RESULTS)
             if db_results:
-                # Преобразуем результаты из БД в формат API
-                matches = []
-                for row in db_results:
-                    # Если есть raw_data - используем его, иначе собираем из полей
-                    if row.get("raw_data"):
-                        import json
-                        if isinstance(row["raw_data"], str):
-                            matches.append(json.loads(row["raw_data"]))
-                        else:
-                            matches.append(row["raw_data"])
-                    else:
-                        # Собираем базовые данные из полей БД
-                        matches.append({
-                            "uuid": str(row.get("uuid", "")),
-                            "shortUuid": row.get("short_uuid"),
-                            "username": row.get("username"),
-                            "email": row.get("email"),
-                            "telegramId": row.get("telegram_id"),
-                            "status": row.get("status"),
-                            "expireAt": row.get("expire_at").isoformat() if row.get("expire_at") else None,
-                            "trafficLimitBytes": row.get("traffic_limit_bytes"),
-                            "usedTrafficBytes": row.get("used_traffic_bytes"),
-                            "hwidDeviceLimit": row.get("hwid_device_limit"),
-                        })
-                logger.debug("Found %d users in database for query: %s", len(matches), search_term)
-                return matches
+                # Данные из БД уже в формате API (через _db_row_to_api_format)
+                logger.debug("Found %d users in database for query: %s", len(db_results), search_term)
+                return db_results
         except Exception as e:
             logger.warning("Database search failed, falling back to API: %s", e)
     

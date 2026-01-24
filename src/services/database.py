@@ -188,7 +188,7 @@ class DatabaseService:
     # ==================== Users ====================
     
     async def get_user_by_uuid(self, uuid: str) -> Optional[Dict[str, Any]]:
-        """Get user by UUID."""
+        """Get user by UUID with raw_data in API format."""
         if not self.is_connected:
             return None
         
@@ -197,10 +197,10 @@ class DatabaseService:
                 "SELECT * FROM users WHERE uuid = $1",
                 uuid
             )
-            return dict(row) if row else None
+            return _db_row_to_api_format(row) if row else None
     
     async def get_user_by_username(self, username: str) -> Optional[Dict[str, Any]]:
-        """Get user by username (case-insensitive)."""
+        """Get user by username (case-insensitive) with raw_data in API format."""
         if not self.is_connected:
             return None
         
@@ -209,10 +209,10 @@ class DatabaseService:
                 "SELECT * FROM users WHERE LOWER(username) = LOWER($1)",
                 username
             )
-            return dict(row) if row else None
+            return _db_row_to_api_format(row) if row else None
     
     async def get_user_by_telegram_id(self, telegram_id: int) -> Optional[Dict[str, Any]]:
-        """Get user by Telegram ID."""
+        """Get user by Telegram ID with raw_data in API format."""
         if not self.is_connected:
             return None
         
@@ -221,10 +221,10 @@ class DatabaseService:
                 "SELECT * FROM users WHERE telegram_id = $1",
                 telegram_id
             )
-            return dict(row) if row else None
+            return _db_row_to_api_format(row) if row else None
     
     async def get_user_by_short_uuid(self, short_uuid: str) -> Optional[Dict[str, Any]]:
-        """Get user by short UUID."""
+        """Get user by short UUID with raw_data in API format."""
         if not self.is_connected:
             return None
         
@@ -233,10 +233,10 @@ class DatabaseService:
                 "SELECT * FROM users WHERE short_uuid = $1",
                 short_uuid
             )
-            return dict(row) if row else None
+            return _db_row_to_api_format(row) if row else None
     
     async def get_user_by_subscription_uuid(self, subscription_uuid: str) -> Optional[Dict[str, Any]]:
-        """Get user by subscription UUID."""
+        """Get user by subscription UUID with raw_data in API format."""
         if not self.is_connected:
             return None
         
@@ -245,7 +245,7 @@ class DatabaseService:
                 "SELECT * FROM users WHERE subscription_uuid = $1",
                 subscription_uuid
             )
-            return dict(row) if row else None
+            return _db_row_to_api_format(row) if row else None
     
     async def search_users(
         self,
@@ -255,7 +255,7 @@ class DatabaseService:
     ) -> List[Dict[str, Any]]:
         """
         Search users by username, email, short_uuid, or UUID.
-        Returns list of matching users.
+        Returns list of matching users in API format.
         """
         if not self.is_connected:
             return []
@@ -276,7 +276,7 @@ class DatabaseService:
                 """,
                 search_pattern, limit, offset
             )
-            return [dict(row) for row in rows]
+            return [_db_row_to_api_format(row) for row in rows]
     
     async def get_users_count(self) -> int:
         """Get total number of users in database."""
@@ -341,7 +341,7 @@ class DatabaseService:
             return stats
     
     async def get_users_by_status(self, status: str, limit: int = 100, offset: int = 0) -> List[Dict[str, Any]]:
-        """Get users by status."""
+        """Get users by status in API format."""
         if not self.is_connected:
             return []
         
@@ -350,7 +350,7 @@ class DatabaseService:
                 "SELECT * FROM users WHERE status = $1 ORDER BY username LIMIT $2 OFFSET $3",
                 status, limit, offset
             )
-            return [dict(row) for row in rows]
+            return [_db_row_to_api_format(row) for row in rows]
     
     async def upsert_user(self, user_data: Dict[str, Any]) -> None:
         """Insert or update a user."""
