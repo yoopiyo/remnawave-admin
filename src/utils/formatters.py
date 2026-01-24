@@ -1,4 +1,4 @@
-﻿from datetime import datetime
+from datetime import datetime
 from typing import Any, Callable
 import html
 
@@ -403,17 +403,21 @@ def build_snippet_detail(snippet: dict, t: Callable[[str], str]) -> str:
 def build_config_profiles_list(profiles: list[dict], t: Callable[[str], str]) -> str:
     if not profiles:
         return t("config.list_empty")
-    lines = [t("config.list_title").format(total=len(profiles))]
+    lines = [
+        t("config.list_title").format(total=len(profiles)),
+        "",  # Пустая строка для разделения
+    ]
     for profile in sorted(profiles, key=lambda p: p.get("viewPosition", 0))[:10]:
         lines.append(
             t("config.list_item").format(
                 name=profile.get("name", "n/a"),
                 nodes=len(profile.get("nodes", [])),
-                uuid=profile.get("uuid", "n/a"),
             )
         )
     if len(profiles) > 10:
+        lines.append("")
         lines.append(t("config.list_more").format(count=len(profiles) - 10))
+    lines.append("")
     lines.append(t("config.list_hint"))
     return "\n".join(lines)
 

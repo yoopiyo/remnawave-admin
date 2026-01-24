@@ -52,7 +52,8 @@ async def _fetch_hosts_text() -> str:
         if not hosts:
             return _("host.list_empty")
         sorted_hosts = sorted(hosts, key=lambda h: h.get("viewPosition", 0))
-        lines = [_("host.list_title").format(total=len(hosts))]
+        total = len(hosts)
+        lines = [_("host.list_title").format(total=total, page=1, pages=1)]
         for host in sorted_hosts[:10]:
             status = "DISABLED" if host.get("isDisabled") else "ENABLED"
             status_emoji = "🟡" if status == "DISABLED" else "🟢"

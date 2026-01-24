@@ -1,4 +1,6 @@
 """Обработчики для работы с нодами."""
+from math import ceil
+
 from aiogram import F, Router
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.types import CallbackQuery, InlineKeyboardButton, InlineKeyboardMarkup, Message
@@ -28,7 +30,8 @@ async def _fetch_nodes_text() -> str:
         if not nodes:
             return _("node.list_empty")
         sorted_nodes = sorted(nodes, key=lambda n: n.get("viewPosition", 0))
-        lines = [_("node.list_title").format(total=len(nodes))]
+        total = len(nodes)
+        lines = [_("node.list_title").format(total=total, page=1, pages=1)]
         for node in sorted_nodes[:10]:
             status = "DISABLED" if node.get("isDisabled") else ("ONLINE" if node.get("isConnected") else "OFFLINE")
             status_emoji = "🟢" if status == "ONLINE" else ("🟡" if status == "DISABLED" else "🔴")

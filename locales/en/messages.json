@@ -481,7 +481,7 @@
     "usage": "🧩 Details: /config <uuid>. List: /configs.",
     "not_found": "🙅 Config profile not found.",
     "list_title": "🧩 Config profiles • total {total}",
-    "list_item": "{name} — nodes {nodes}, uuid: {uuid}",
+    "list_item": "  • {name}\n    └─ Nodes: {nodes}",
     "list_more": "…and {count} more",
     "list_hint": "ℹ️ Details: /config <uuid>",
     "list_empty": "No config profiles.",
