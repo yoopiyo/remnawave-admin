@@ -203,16 +203,74 @@ async def receive_connections(
             processed
         )
     
-    # После обработки подключений обновляем статистику для затронутых пользователей
-    # (пока только логируем, полная проверка Anti-Abuse будет в следующей фазе)
+    # После обработки подключений автоматически закрываем старые подключения
+    # (старше 5 минут без активности) для пользователей, у которых появились новые подключения
+    # Это необходимо, так как агент не видит события отключения в логах Xray
     if processed > 0:
         try:
             # Собираем UUID пользователей, для которых были записаны подключения
             affected_user_uuids = set()
+            # Также собираем информацию о новых подключениях по IP для каждого пользователя
+            new_connections_by_user = {}  # {user_uuid: set(ip_addresses)}
+            
             for conn in report.connections:
                 user_uuid = await _find_user_uuid_by_identifier(conn.user_email)
                 if user_uuid:
                     affected_user_uuids.add(user_uuid)
+                    if user_uuid not in new_connections_by_user:
+                        new_connections_by_user[user_uuid] = set()
+                    new_connections_by_user[user_uuid].add(str(conn.ip_address))
+            
+            # Закрываем старые подключения (старше 5 минут) для этих пользователей
+            for user_uuid in affected_user_uuids:
+                try:
+                    # Получаем активные подключения пользователя
+                    active_connections = await db_service.get_user_active_connections(user_uuid, limit=1000)
+                    now = datetime.utcnow()
+                    closed_count = 0
+                    new_ips = new_connections_by_user.get(user_uuid, set())
+                    
+                    for active_conn in active_connections:
+                        conn_time = active_conn.get("connected_at")
+                        if not conn_time:
+                            continue
+                        
+                        # Преобразуем в datetime если нужно
+                        if isinstance(conn_time, str):
+                            try:
+                                conn_time = datetime.fromisoformat(conn_time.replace('Z', '+00:00'))
+                            except ValueError:
+                                continue
+                        
+                        if not isinstance(conn_time, datetime):
+                            continue
+                        
+                        # Убираем timezone для сравнения
+                        if conn_time.tzinfo:
+                            conn_time = conn_time.replace(tzinfo=None)
+                        
+                        # Если подключение старше 5 минут и нет новых подключений с этим IP,
+                        # считаем его устаревшим и закрываем
+                        age_minutes = (now - conn_time).total_seconds() / 60
+                        if age_minutes > 5:
+                            conn_ip = str(active_conn.get("ip_address", ""))
+                            # Если нет новых подключений с этим IP, закрываем старое
+                            if conn_ip not in new_ips:
+                                conn_id = active_conn.get("id")
+                                if conn_id:
+                                    await db_service.close_user_connection(conn_id)
+                                    closed_count += 1
+                    
+                    if closed_count > 0:
+                        logger.debug(
+                            "Auto-closed %d old connections for user %s",
+                            closed_count,
+                            user_uuid
+                        )
+                except Exception as e:
+                    logger.warning("Error auto-closing old connections for user %s: %s", user_uuid, e, exc_info=True)
+            
+            # Обновляем статистику и проверяем нарушения для каждого затронутого пользователя
             
             # Обновляем статистику и проверяем нарушения для каждого затронутого пользователя
             for user_uuid in affected_user_uuids:
