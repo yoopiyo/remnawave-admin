@@ -261,6 +261,25 @@ class DatabaseService:
             )
             return _db_row_to_api_format(row) if row else None
     
+    async def get_user_uuid_by_id_from_raw_data(self, user_id: str) -> Optional[str]:
+        """Находит user_uuid по ID из raw_data (для Xray логов)."""
+        if not self.is_connected or not user_id:
+            return None
+        
+        async with self.acquire() as conn:
+            # Ищем по разным возможным полям в raw_data
+            row = await conn.fetchrow(
+                """
+                SELECT uuid FROM users 
+                WHERE raw_data->>'id' = $1 
+                   OR raw_data->>'userId' = $1
+                   OR raw_data->>'user_id' = $1
+                LIMIT 1
+                """,
+                user_id
+            )
+            return str(row["uuid"]) if row else None
+    
     async def search_users(
         self,
         query: str,

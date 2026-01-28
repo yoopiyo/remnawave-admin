@@ -39,3 +39,6 @@ class Settings(BaseSettings):
 
     # Логирование
     log_level: str = "INFO"
+    
+    # Опционально: путь к логам для отладки (если отличается от xray_log_path)
+    # debug_log_path: Optional[str] = None

@@ -42,10 +42,11 @@ class CollectorSender:
                         headers=self._headers,
                     )
                     resp.raise_for_status()
-                    logger.debug(
-                        "Batch sent: %s connections, response %s",
+                    response_data = resp.json()
+                    logger.info(
+                        "Batch sent successfully: %s connections, response: %s",
                         len(connections),
-                        resp.json(),
+                        response_data,
                     )
                     return True
             except httpx.HTTPStatusError as e:

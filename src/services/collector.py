@@ -92,12 +92,30 @@ async def receive_connections(
     
     for conn in report.connections:
         try:
-            # Находим user_uuid по email
-            user_uuid = await db_service.get_user_uuid_by_email(conn.user_email)
+            # Пытаемся найти пользователя по разным идентификаторам
+            # Формат из логов может быть: "user_154" (где 154 - ID пользователя)
+            user_uuid = None
+            
+            # Если это формат "user_XXX", извлекаем ID
+            if conn.user_email.startswith("user_"):
+                user_id_str = conn.user_email.replace("user_", "")
+                # Пытаемся найти по short_uuid (может быть числовой ID)
+                user = await db_service.get_user_by_short_uuid(user_id_str)
+                if user:
+                    user_uuid = user.get("uuid")
+            
+            # Если не нашли, пытаемся найти по email (обычный формат)
+            if not user_uuid:
+                user_uuid = await db_service.get_user_uuid_by_email(conn.user_email)
+            
+            # Если всё ещё не нашли, пытаемся найти в raw_data по ID
+            if not user_uuid and conn.user_email.startswith("user_"):
+                user_id_str = conn.user_email.replace("user_", "")
+                user_uuid = await db_service.get_user_uuid_by_id_from_raw_data(user_id_str)
             
             if not user_uuid:
                 logger.warning(
-                    "User not found for email=%s, skipping connection",
+                    "User not found for identifier=%s, skipping connection",
                     conn.user_email
                 )
                 errors += 1
