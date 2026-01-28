@@ -15,6 +15,7 @@ from enum import Enum
 
 from src.services.database import DatabaseService
 from src.services.connection_monitor import ConnectionMonitor, ActiveConnection, ConnectionStats
+from src.services.api_client import APIClient
 from src.utils.logger import logger
 
 
@@ -100,7 +101,8 @@ class TemporalAnalyzer:
     def analyze(
         self,
         connections: List[ActiveConnection],
-        connection_history: List[Dict[str, Any]]
+        connection_history: List[Dict[str, Any]],
+        user_device_count: int = 1
     ) -> TemporalScore:
         """
         Анализирует временные паттерны подключений.
@@ -108,6 +110,7 @@ class TemporalAnalyzer:
         Args:
             connections: Активные подключения
             connection_history: История подключений за период
+            user_device_count: Количество устройств пользователя (для учёта нормальных одновременных подключений)
         
         Returns:
             TemporalScore с оценкой и причинами
@@ -118,10 +121,14 @@ class TemporalAnalyzer:
         
         # Проверка одновременных подключений
         # Считаем уникальные IP и проверяем, действительно ли подключения одновременные
-        # (в пределах 5 минут друг от друга)
+        # Подключения считаются одновременными только если они созданы в пределах окна
+        # (2 минуты) - это учитывает нормальное переключение между сетями (Wi-Fi <-> мобильная)
         if len(connections) > 1:
-            simultaneous_window_minutes = 5  # Окно для определения одновременности
+            simultaneous_window_seconds = 120  # Окно для определения одновременности (2 минуты)
             max_connection_age_hours = 24  # Максимальный возраст подключения для учёта
+            # Учитываем количество устройств пользователя - если у пользователя несколько устройств,
+            # то несколько одновременных подключений могут быть нормальными
+            max_allowed_simultaneous = max(1, user_device_count)
             
             # Собираем все валидные времена подключений
             valid_connections = []
@@ -155,20 +162,29 @@ class TemporalAnalyzer:
                 valid_connections.sort(key=lambda x: x[0])
                 
                 # Группируем подключения по временным окнам
-                # Подключения считаются одновременными, если они в пределах окна друг от друга
+                # Подключения считаются одновременными только если они созданы в пределах окна (2 минуты) друг от друга
+                # И между ними нет большого разрыва (что указывало бы на последовательное переключение)
                 simultaneous_groups = []
                 current_group = [valid_connections[0]]
                 
                 for conn_time, ip in valid_connections[1:]:
+                    # Проверяем разрыв между текущим и предыдущим подключением
+                    prev_conn_time = current_group[-1][0]
+                    time_diff_seconds = (conn_time - prev_conn_time).total_seconds()
+                    
                     # Проверяем, попадает ли подключение в текущую группу
                     # (в пределах окна от самого раннего подключения в группе)
                     earliest_in_group = current_group[0][0]
-                    time_diff_minutes = (conn_time - earliest_in_group).total_seconds() / 60
+                    time_diff_from_earliest_seconds = (conn_time - earliest_in_group).total_seconds()
                     
-                    if time_diff_minutes <= simultaneous_window_minutes:
+                    # Подключение считается одновременным только если:
+                    # 1. Оно в пределах окна от самого раннего подключения в группе
+                    # 2. Разрыв между подключениями не слишком большой (не более окна одновременности)
+                    if (time_diff_from_earliest_seconds <= simultaneous_window_seconds and 
+                        time_diff_seconds <= simultaneous_window_seconds):
                         current_group.append((conn_time, ip))
                     else:
-                        # Начинаем новую группу
+                        # Начинаем новую группу (есть разрыв, указывающий на последовательное переключение)
                         if len(current_group) > 1:
                             simultaneous_groups.append(current_group)
                         current_group = [(conn_time, ip)]
@@ -186,12 +202,19 @@ class TemporalAnalyzer:
                 # Если есть действительно одновременные подключения с разных IP
                 if max_simultaneous_ips > 1:
                     simultaneous_count = max_simultaneous_ips
-                    if simultaneous_count > 3:
-                        score = 100.0
-                        reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (> 3)")
-                    else:
-                        score = 80.0
-                        reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP")
+                    # Учитываем количество устройств пользователя
+                    # Если количество одновременных подключений не превышает количество устройств + 1,
+                    # это может быть нормальным (например, переключение между сетями)
+                    if simultaneous_count > max_allowed_simultaneous + 1:
+                        if simultaneous_count > 3:
+                            score = 100.0
+                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (> 3, устройств: {user_device_count})")
+                        else:
+                            score = 80.0
+                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (устройств: {user_device_count})")
+                    # Если количество подключений соответствует количеству устройств или немного больше,
+                    # это может быть нормальным (переключение сетей, несколько устройств)
+                    # Не добавляем скор, но оставляем для статистики
                 else:
                     # Если нет одновременных подключений, используем количество уникальных IP для статистики
                     simultaneous_count = len(set(ip for _, ip in valid_connections))
@@ -507,9 +530,10 @@ class IntelligentViolationDetector:
         'hard_block': 95,      # > 95: блокировка + ручная проверка
     }
     
-    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor):
+    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor, api_client: Optional[APIClient] = None):
         self.db = db_service
         self.connection_monitor = connection_monitor
+        self.api_client = api_client
         self.temporal_analyzer = TemporalAnalyzer()
         self.geo_analyzer = GeoAnalyzer()
     
@@ -529,6 +553,17 @@ class IntelligentViolationDetector:
             return None
         
         try:
+            # Получаем количество устройств пользователя
+            user_device_count = 1  # По умолчанию 1 устройство
+            if self.api_client:
+                try:
+                    devices_data = await self.api_client.get_user_hwid_devices(user_uuid)
+                    devices = devices_data.get("response", {}).get("devices", [])
+                    user_device_count = len(devices) if devices else 1
+                except Exception as e:
+                    logger.debug("Failed to get user devices count for %s: %s", user_uuid, e)
+                    # Используем значение по умолчанию
+            
             # Получаем активные подключения
             active_connections = await self.connection_monitor.get_user_active_connections(user_uuid)
             
@@ -536,8 +571,8 @@ class IntelligentViolationDetector:
             history_days = max(1, window_minutes // (24 * 60) + 1)
             connection_history = await self.db.get_connection_history(user_uuid, days=history_days)
             
-            # Анализируем временные паттерны
-            temporal_score = self.temporal_analyzer.analyze(active_connections, connection_history)
+            # Анализируем временные паттерны (передаём количество устройств)
+            temporal_score = self.temporal_analyzer.analyze(active_connections, connection_history, user_device_count)
             
             # Анализируем геолокацию
             geo_score = self.geo_analyzer.analyze(active_connections, connection_history)
