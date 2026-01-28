@@ -1681,3 +1681,228 @@ async def cb_node_actions(callback: CallbackQuery) -> None:
         logger.exception("❌ Node action failed action=%s node_uuid=%s actor_id=%s", action, node_uuid, callback.from_user.id)
         await callback.message.edit_text(_("errors.generic"), reply_markup=main_menu_keyboard())
 
+
+@router.callback_query(F.data.startswith("node_agent_token:"))
+async def cb_node_agent_token_menu(callback: CallbackQuery) -> None:
+    """Меню управления токеном агента для ноды."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    node_uuid = parts[1]
+    back_to = NavTarget.NODES_LIST
+    
+    try:
+        # Получаем информацию о ноде
+        node = await api_client.get_node(node_uuid)
+        node_info = node.get("response", node)
+        node_name = node_info.get("name", "n/a")
+        
+        # Проверяем текущий токен
+        current_token = await db_service.get_node_agent_token(node_uuid)
+        
+        # Формируем текст
+        lines = [
+            f"*{_('node.agent_token_title')}*",
+            "",
+            f"**{_('node.name')}:** `{_esc(node_name)}`",
+            f"**{_('node.uuid')}:** `{node_uuid}`",
+            "",
+        ]
+        
+        if current_token:
+            # Маскируем токен для отображения (показываем первые 8 и последние 4 символа)
+            masked = f"{current_token[:8]}...{current_token[-4:]}" if len(current_token) > 12 else "***"
+            lines.append(f"**{_('node.agent_token_current')}:** `{masked}`")
+            lines.append("")
+            lines.append(_("node.agent_token_hint"))
+        else:
+            lines.append(f"**{_('node.agent_token_status')}:** {_('node.agent_token_not_set')}")
+            lines.append("")
+            lines.append(_("node.agent_token_generate_hint"))
+        
+        text = "\n".join(lines)
+        
+        # Формируем клавиатуру
+        keyboard_rows = []
+        if current_token:
+            keyboard_rows.append([
+                InlineKeyboardButton(text=_("node.agent_token_show"), callback_data=f"node_agent_token_show:{node_uuid}"),
+                InlineKeyboardButton(text=_("node.agent_token_revoke"), callback_data=f"node_agent_token_revoke:{node_uuid}"),
+            ])
+        keyboard_rows.append([
+            InlineKeyboardButton(text=_("node.agent_token_generate"), callback_data=f"node_agent_token_generate:{node_uuid}"),
+        ])
+        keyboard_rows.append(nav_row(back_to))
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get node for agent token menu node_uuid=%s", node_uuid)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("node_agent_token_generate:"))
+async def cb_node_agent_token_generate(callback: CallbackQuery) -> None:
+    """Генерация нового токена агента для ноды."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    node_uuid = parts[1]
+    back_to = NavTarget.NODES_LIST
+    
+    try:
+        # Проверяем существование ноды
+        node = await api_client.get_node(node_uuid)
+        node_info = node.get("response", node)
+        node_name = node_info.get("name", "n/a")
+        
+        # Генерируем новый токен
+        from src.utils.agent_tokens import set_node_agent_token
+        
+        new_token = await set_node_agent_token(db_service, node_uuid)
+        
+        if not new_token:
+            await callback.answer(_("node.agent_token_error"), show_alert=True)
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+            return
+        
+        # Показываем токен
+        text = (
+            f"*{_('node.agent_token_generated')}*\n\n"
+            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
+            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
+            f"**{_('node.agent_token')}:**\n"
+            f"```\n{new_token}\n```\n\n"
+            f"⚠️ {_('node.agent_token_warning')}\n\n"
+            f"{_('node.agent_token_usage_hint').format(node_uuid=node_uuid, token=new_token)}"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_("node.agent_token_back"), callback_data=f"node_agent_token:{node_uuid}")],
+            nav_row(back_to),
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get node for token generation node_uuid=%s", node_uuid)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("node_agent_token_show:"))
+async def cb_node_agent_token_show(callback: CallbackQuery) -> None:
+    """Показ текущего токена агента."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    node_uuid = parts[1]
+    back_to = NavTarget.NODES_LIST
+    
+    try:
+        # Проверяем существование ноды
+        node = await api_client.get_node(node_uuid)
+        node_info = node.get("response", node)
+        node_name = node_info.get("name", "n/a")
+        
+        # Получаем токен
+        token = await db_service.get_node_agent_token(node_uuid)
+        
+        if not token:
+            await callback.answer(_("node.agent_token_not_set"), show_alert=True)
+            await cb_node_agent_token_menu(callback)
+            return
+        
+        # Показываем токен
+        text = (
+            f"*{_('node.agent_token_current')}*\n\n"
+            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
+            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
+            f"**{_('node.agent_token')}:**\n"
+            f"```\n{token}\n```\n\n"
+            f"⚠️ {_('node.agent_token_warning')}"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_("node.agent_token_back"), callback_data=f"node_agent_token:{node_uuid}")],
+            nav_row(back_to),
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get node for token show node_uuid=%s", node_uuid)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+
+
+@router.callback_query(F.data.startswith("node_agent_token_revoke:"))
+async def cb_node_agent_token_revoke(callback: CallbackQuery) -> None:
+    """Отзыв токена агента (удаление)."""
+    if await _not_admin(callback):
+        return
+    await callback.answer()
+    parts = callback.data.split(":")
+    if len(parts) < 2:
+        return
+    
+    node_uuid = parts[1]
+    back_to = NavTarget.NODES_LIST
+    
+    try:
+        # Проверяем существование ноды
+        node = await api_client.get_node(node_uuid)
+        node_info = node.get("response", node)
+        node_name = node_info.get("name", "n/a")
+        
+        # Отзываем токен
+        from src.utils.agent_tokens import revoke_node_agent_token
+        
+        success = await revoke_node_agent_token(db_service, node_uuid)
+        
+        if not success:
+            await callback.answer(_("node.agent_token_error"), show_alert=True)
+            await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+            return
+        
+        text = (
+            f"✅ {_('node.agent_token_revoked')}\n\n"
+            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
+            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
+            f"{_('node.agent_token_revoked_hint')}"
+        )
+        
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text=_("node.agent_token_back"), callback_data=f"node_agent_token:{node_uuid}")],
+            nav_row(back_to),
+        ])
+        
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+    except UnauthorizedError:
+        await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
+    except NotFoundError:
+        await callback.message.edit_text(_("node.not_found"), reply_markup=nav_keyboard(back_to))
+    except ApiClientError:
+        logger.exception("Failed to get node for token revoke node_uuid=%s", node_uuid)
+        await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
+

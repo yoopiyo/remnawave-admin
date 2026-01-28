@@ -38,6 +38,9 @@ def node_edit_keyboard(node_uuid: str, is_disabled: bool = False, back_to: str =
                 InlineKeyboardButton(text=_("node.edit_tags"), callback_data=f"nef:tags::{node_uuid}"),
             ],
             [
+                InlineKeyboardButton(text=_("node.agent_token"), callback_data=f"node_agent_token:{node_uuid}"),
+            ],
+            [
                 InlineKeyboardButton(text=_("node.delete"), callback_data=f"node_delete:{node_uuid}"),
             ],
             nav_row(back_to),

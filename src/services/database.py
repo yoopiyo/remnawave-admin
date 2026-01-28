@@ -51,12 +51,14 @@ CREATE TABLE IF NOT EXISTS nodes (
     is_connected BOOLEAN DEFAULT FALSE,
     traffic_limit_bytes BIGINT,
     traffic_used_bytes BIGINT,
+    agent_token VARCHAR(255),  -- Токен для аутентификации Node Agent
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
     raw_data JSONB
 );
 
 CREATE INDEX IF NOT EXISTS idx_nodes_name ON nodes(name);
 CREATE INDEX IF NOT EXISTS idx_nodes_is_connected ON nodes(is_connected);
+CREATE INDEX IF NOT EXISTS idx_nodes_agent_token ON nodes(agent_token) WHERE agent_token IS NOT NULL;
 
 -- Хосты
 CREATE TABLE IF NOT EXISTS hosts (
@@ -454,6 +456,18 @@ class DatabaseService:
             )
             return _db_row_to_api_format(row) if row else None
     
+    async def get_node_agent_token(self, uuid: str) -> Optional[str]:
+        """Получить токен агента для ноды (если установлен)."""
+        if not self.is_connected:
+            return None
+        
+        async with self.acquire() as conn:
+            row = await conn.fetchrow(
+                "SELECT agent_token FROM nodes WHERE uuid = $1",
+                uuid
+            )
+            return row["agent_token"] if row and row["agent_token"] else None
+    
     async def get_nodes_stats(self) -> Dict[str, int]:
         """
         Get nodes statistics.
@@ -504,6 +518,7 @@ class DatabaseService:
                     traffic_used_bytes = EXCLUDED.traffic_used_bytes,
                     updated_at = NOW(),
                     raw_data = EXCLUDED.raw_data
+                    -- agent_token НЕ обновляем при синхронизации из API (сохраняем локальные настройки)
                 """,
                 uuid,
                 response.get("name"),
