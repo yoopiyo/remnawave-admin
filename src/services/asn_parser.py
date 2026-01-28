@@ -217,9 +217,33 @@ class ASNParser:
             data = response.json()
             
             # Парсим данные из формата RIPE Database
-            if 'objects' in data and len(data['objects']) > 0:
-                obj = data['objects'][0]
-                attributes = obj.get('attributes', {})
+            # Структура: data['objects']['object'] - массив объектов
+            if 'objects' in data:
+                objects_data = data['objects']
+                # objects может быть словарём с ключом 'object' (список) или списком
+                if isinstance(objects_data, dict) and 'object' in objects_data:
+                    objects_list = objects_data['object']
+                elif isinstance(objects_data, list):
+                    objects_list = objects_data
+                else:
+                    logger.debug("Unexpected objects structure for ASN %d: %s", asn, type(objects_data))
+                    return None
+                
+                if not objects_list or len(objects_list) == 0:
+                    logger.debug("No objects found for ASN %d", asn)
+                    return None
+                
+                obj = objects_list[0]
+                
+                # attributes может быть словарём с ключом 'attribute' (список) или списком
+                attributes_data = obj.get('attributes', {})
+                if isinstance(attributes_data, dict) and 'attribute' in attributes_data:
+                    attributes = attributes_data['attribute']
+                elif isinstance(attributes_data, list):
+                    attributes = attributes_data
+                else:
+                    logger.debug("Unexpected attributes structure for ASN %d: %s", asn, type(attributes_data))
+                    attributes = []
                 
                 # Извлекаем атрибуты
                 result = {
@@ -232,11 +256,19 @@ class ASNParser:
                 
                 # Парсим атрибуты
                 for attr in attributes:
+                    if not isinstance(attr, dict):
+                        continue
+                    
                     attr_name = attr.get('name', '').lower()
                     attr_value = attr.get('value', '')
                     
                     if attr_name == 'org':
                         result['org_name'] = attr_value
+                    elif attr_name == 'as-name':
+                        # ASN название (может быть на английском)
+                        if not result['org_name']:
+                            result['org_name'] = attr_value
+                        result['org_name_en'] = attr_value
                     elif attr_name == 'descr':
                         if not result['description']:
                             result['description'] = attr_value
@@ -244,6 +276,10 @@ class ASNParser:
                             result['description'] += f"; {attr_value}"
                     elif attr_name == 'country':
                         result['country'] = attr_value.upper()
+                
+                # Если org_name не найден, используем as-name или aut-num
+                if not result['org_name']:
+                    result['org_name'] = result.get('org_name_en') or f'AS{asn}'
                 
                 return result
             
