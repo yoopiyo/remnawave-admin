@@ -1704,23 +1704,23 @@ async def cb_node_agent_token_menu(callback: CallbackQuery) -> None:
         # Проверяем текущий токен
         current_token = await db_service.get_node_agent_token(node_uuid)
         
-        # Формируем текст
+        # Формируем текст (используем HTML)
         lines = [
-            f"*{_('node.agent_token_title')}*",
+            f"<b>{_('node.agent_token_title')}</b>",
             "",
-            f"**{_('node.name')}:** `{_esc(node_name)}`",
-            f"**{_('node.uuid')}:** `{node_uuid}`",
+            f"<b>{_('node.name')}:</b> <code>{_esc(node_name)}</code>",
+            f"<b>{_('node.uuid')}:</b> <code>{node_uuid}</code>",
             "",
         ]
         
         if current_token:
             # Маскируем токен для отображения (показываем первые 8 и последние 4 символа)
             masked = f"{current_token[:8]}...{current_token[-4:]}" if len(current_token) > 12 else "***"
-            lines.append(f"**{_('node.agent_token_current')}:** `{masked}`")
+            lines.append(f"<b>{_('node.agent_token_current')}:</b> <code>{_esc(masked)}</code>")
             lines.append("")
             lines.append(_("node.agent_token_hint"))
         else:
-            lines.append(f"**{_('node.agent_token_status')}:** {_('node.agent_token_not_set')}")
+            lines.append(f"<b>{_('node.agent_token_status')}:</b> {_('node.agent_token_not_set')}")
             lines.append("")
             lines.append(_("node.agent_token_generate_hint"))
         
@@ -1739,7 +1739,7 @@ async def cb_node_agent_token_menu(callback: CallbackQuery) -> None:
         keyboard_rows.append(nav_row(back_to))
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=keyboard_rows)
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
     except NotFoundError:
@@ -1778,15 +1778,15 @@ async def cb_node_agent_token_generate(callback: CallbackQuery) -> None:
             await callback.message.edit_text(_("errors.generic"), reply_markup=nav_keyboard(back_to))
             return
         
-        # Показываем токен
+        # Показываем токен (используем HTML для безопасного отображения токена)
         text = (
-            f"*{_('node.agent_token_generated')}*\n\n"
-            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
-            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
-            f"**{_('node.agent_token')}:**\n"
-            f"```\n{new_token}\n```\n\n"
+            f"<b>{_('node.agent_token_generated')}</b>\n\n"
+            f"<b>{_('node.name')}:</b> <code>{_esc(node_name)}</code>\n"
+            f"<b>{_('node.uuid')}:</b> <code>{node_uuid}</code>\n\n"
+            f"<b>{_('node.agent_token')}:</b>\n"
+            f"<pre><code>{_esc(new_token)}</code></pre>\n\n"
             f"⚠️ {_('node.agent_token_warning')}\n\n"
-            f"{_('node.agent_token_usage_hint').format(node_uuid=node_uuid, token=new_token)}"
+            f"{_('node.agent_token_usage_hint').format(node_uuid=node_uuid, token=_esc(new_token))}"
         )
         
         keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -1794,7 +1794,7 @@ async def cb_node_agent_token_generate(callback: CallbackQuery) -> None:
             nav_row(back_to),
         ])
         
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
     except NotFoundError:
@@ -1831,13 +1831,13 @@ async def cb_node_agent_token_show(callback: CallbackQuery) -> None:
             await cb_node_agent_token_menu(callback)
             return
         
-        # Показываем токен
+        # Показываем токен (используем HTML для безопасного отображения токена)
         text = (
-            f"*{_('node.agent_token_current')}*\n\n"
-            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
-            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
-            f"**{_('node.agent_token')}:**\n"
-            f"```\n{token}\n```\n\n"
+            f"<b>{_('node.agent_token_current')}</b>\n\n"
+            f"<b>{_('node.name')}:</b> <code>{_esc(node_name)}</code>\n"
+            f"<b>{_('node.uuid')}:</b> <code>{node_uuid}</code>\n\n"
+            f"<b>{_('node.agent_token')}:</b>\n"
+            f"<pre><code>{_esc(token)}</code></pre>\n\n"
             f"⚠️ {_('node.agent_token_warning')}"
         )
         
@@ -1846,7 +1846,7 @@ async def cb_node_agent_token_show(callback: CallbackQuery) -> None:
             nav_row(back_to),
         ])
         
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
     except NotFoundError:
@@ -1887,8 +1887,8 @@ async def cb_node_agent_token_revoke(callback: CallbackQuery) -> None:
         
         text = (
             f"✅ {_('node.agent_token_revoked')}\n\n"
-            f"**{_('node.name')}:** `{_esc(node_name)}`\n"
-            f"**{_('node.uuid')}:** `{node_uuid}`\n\n"
+            f"<b>{_('node.name')}:</b> <code>{_esc(node_name)}</code>\n"
+            f"<b>{_('node.uuid')}:</b> <code>{node_uuid}</code>\n\n"
             f"{_('node.agent_token_revoked_hint')}"
         )
         
@@ -1897,7 +1897,7 @@ async def cb_node_agent_token_revoke(callback: CallbackQuery) -> None:
             nav_row(back_to),
         ])
         
-        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="Markdown")
+        await callback.message.edit_text(text, reply_markup=keyboard, parse_mode="HTML")
     except UnauthorizedError:
         await callback.message.edit_text(_("errors.unauthorized"), reply_markup=nav_keyboard(back_to))
     except NotFoundError:

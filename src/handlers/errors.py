@@ -42,7 +42,12 @@ async def errors_handler(event: ErrorEvent) -> None:
         error_message = _get_error_message(exc, include_code=True, include_hint=True)
     else:
         # Для неизвестных ошибок показываем общее сообщение с кодом
-        error_message = _("errors.generic") + f"\n🔢 Код: `{error_code}`"
+        # Используем try-except для случая, когда i18n контекст не установлен
+        try:
+            error_message = _("errors.generic") + f"\n🔢 Код: `{error_code}`"
+        except LookupError:
+            # Fallback если i18n контекст не установлен
+            error_message = f"⚠️ Что-то пошло не так. Повтори чуть позже.\n🔢 Код: `{error_code}`"
     
     try:
         if update.message:

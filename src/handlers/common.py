@@ -168,53 +168,63 @@ def _get_error_message(exc: Exception, include_code: bool = True, include_hint: 
         ValidationError,
     )
     
+    def _safe_gettext(key: str, fallback: str) -> str:
+        """Безопасный вызов gettext с fallback."""
+        try:
+            return _(key)
+        except LookupError:
+            return fallback
+    
     # Определяем базовое сообщение, код и подсказку
     message = ""
     error_code = ""
     hint = ""
     
     if isinstance(exc, UnauthorizedError):
-        message = _("errors.unauthorized")
+        message = _safe_gettext("errors.unauthorized", "⛔️ Нет доступа. Проверь API токен в настройках.")
         error_code = exc.code
-        hint = _("errors.hint_unauthorized")
+        hint = _safe_gettext("errors.hint_unauthorized", "Проверь API токен в настройках бота")
     elif isinstance(exc, NotFoundError):
-        message = _("errors.not_found")
+        message = _safe_gettext("errors.not_found", "❌ Объект не найден. Возможно, он был удален.")
         error_code = exc.code
-        hint = _("errors.hint_not_found")
+        hint = _safe_gettext("errors.hint_not_found", "Убедись, что объект существует и не был удален")
     elif isinstance(exc, TimeoutError):
-        message = _("errors.timeout_error")
+        message = _safe_gettext("errors.timeout_error", "⏱ Превышено время ожидания ответа от сервера.")
         error_code = exc.code
-        hint = _("errors.hint_timeout")
+        hint = _safe_gettext("errors.hint_timeout", "Сервер перегружен или медленно отвечает. Попробуй позже")
     elif isinstance(exc, NetworkError):
-        message = _("errors.network_error")
+        message = _safe_gettext("errors.network_error", "🌐 Ошибка сети. Не удалось подключиться к серверу.")
         error_code = exc.code
-        hint = _("errors.hint_network")
+        hint = _safe_gettext("errors.hint_network", "Проверь подключение к интернету и доступность API сервера")
     elif isinstance(exc, RateLimitError):
-        message = _("errors.rate_limit")
+        message = _safe_gettext("errors.rate_limit", "🚦 Превышен лимит запросов.")
         error_code = exc.code
-        hint = _("errors.hint_rate_limit")
+        hint = _safe_gettext("errors.hint_rate_limit", "Подожди немного перед повторной попыткой")
     elif isinstance(exc, ServerError):
-        message = _("errors.server_error")
+        message = _safe_gettext("errors.server_error", "🔴 Ошибка сервера. Сервис временно недоступен.")
         error_code = exc.code
-        hint = _("errors.hint_server")
+        hint = _safe_gettext("errors.hint_server", "Сервер временно недоступен. Попробуй через несколько минут")
     elif isinstance(exc, ValidationError):
-        message = _("errors.validation_error")
+        message = _safe_gettext("errors.validation_error", "⚠️ Ошибка валидации данных. Проверь введенные значения.")
         error_code = exc.code
         # Для ошибок валидации добавляем информацию о поле, если есть
         if exc.field:
-            hint = _("errors.hint_validation_field").format(field=exc.field)
+            try:
+                hint = _("errors.hint_validation_field").format(field=exc.field)
+            except LookupError:
+                hint = f"Проверь формат введенных данных (поле: {exc.field})"
         else:
-            hint = _("errors.hint_validation")
+            hint = _safe_gettext("errors.hint_validation", "Проверь формат введенных данных")
     elif isinstance(exc, ApiClientError):
         # Общая ошибка API
-        message = _("errors.generic")
+        message = _safe_gettext("errors.generic", "⚠️ Что-то пошло не так. Повтори чуть позже.")
         error_code = getattr(exc, "code", "ERR_API_000")
-        hint = _("errors.hint_generic")
+        hint = _safe_gettext("errors.hint_generic", "Попробуй повторить операцию позже")
     else:
         # Для других типов ошибок возвращаем общее сообщение
-        message = _("errors.generic")
+        message = _safe_gettext("errors.generic", "⚠️ Что-то пошло не так. Повтори чуть позже.")
         error_code = "ERR_UNK_001"
-        hint = _("errors.hint_generic")
+        hint = _safe_gettext("errors.hint_generic", "Попробуй повторить операцию позже")
     
     # Формируем финальное сообщение
     parts = [message]
