@@ -8,6 +8,7 @@ from datetime import datetime
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from src.services.database import db_service
@@ -71,6 +72,11 @@ async def receive_connections(
     
     Записывает подключения в таблицу user_connections.
     """
+    logger.info(
+        "Received batch request: node_uuid=%s connections_count=%d",
+        node_uuid,
+        len(report.connections) if report.connections else 0
+    )
     # Проверяем что node_uuid из токена совпадает с node_uuid в запросе
     if report.node_uuid != node_uuid:
         logger.warning(
@@ -84,7 +90,10 @@ async def receive_connections(
         )
     
     if not report.connections:
-        return {"status": "ok", "processed": 0, "message": "No connections to process"}
+        return JSONResponse(
+            status_code=200,
+            content={"status": "ok", "processed": 0, "message": "No connections to process"}
+        )
     
     # Записываем подключения в БД
     processed = 0
@@ -159,19 +168,25 @@ async def receive_connections(
         errors
     )
     
-    return {
+    response_data = {
         "status": "ok",
         "processed": processed,
         "errors": errors,
         "node_uuid": node_uuid,
     }
+    
+    logger.debug("Sending response: %s", response_data)
+    return JSONResponse(status_code=200, content=response_data)
 
 
 @router.get("/health")
 async def collector_health():
     """Проверка здоровья Collector API."""
-    return {
-        "status": "ok",
-        "service": "collector",
-        "database_connected": db_service.is_connected,
-    }
+    return JSONResponse(
+        status_code=200,
+        content={
+            "status": "ok",
+            "service": "collector",
+            "database_connected": db_service.is_connected,
+        }
+    )
