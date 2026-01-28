@@ -114,17 +114,97 @@ class TemporalAnalyzer:
         """
         score = 0.0
         reasons = []
-        simultaneous_count = len(connections)
         rapid_switches = 0
         
         # Проверка одновременных подключений
-        if simultaneous_count > 1:
-            if simultaneous_count > 3:
-                score = 100.0
-                reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (> 3)")
+        # Считаем уникальные IP и проверяем, действительно ли подключения одновременные
+        # (в пределах 5 минут друг от друга)
+        if len(connections) > 1:
+            simultaneous_window_minutes = 5  # Окно для определения одновременности
+            max_connection_age_hours = 24  # Максимальный возраст подключения для учёта
+            
+            # Собираем все валидные времена подключений
+            valid_connections = []
+            now = datetime.utcnow()
+            
+            for conn in connections:
+                conn_time = conn.connected_at
+                if isinstance(conn_time, str):
+                    try:
+                        conn_time = datetime.fromisoformat(conn_time.replace('Z', '+00:00'))
+                    except ValueError:
+                        continue
+                
+                if not isinstance(conn_time, datetime):
+                    continue
+                
+                # Убираем timezone для сравнения
+                if conn_time.tzinfo:
+                    conn_time = conn_time.replace(tzinfo=None)
+                
+                # Пропускаем слишком старые подключения (старше 24 часов)
+                age_hours = (now - conn_time).total_seconds() / 3600
+                if age_hours > max_connection_age_hours:
+                    continue
+                
+                valid_connections.append((conn_time, str(conn.ip_address)))
+            
+            # Если есть валидные подключения, проверяем одновременность
+            if len(valid_connections) > 1:
+                # Сортируем по времени подключения
+                valid_connections.sort(key=lambda x: x[0])
+                
+                # Группируем подключения по временным окнам
+                # Подключения считаются одновременными, если они в пределах окна друг от друга
+                simultaneous_groups = []
+                current_group = [valid_connections[0]]
+                
+                for conn_time, ip in valid_connections[1:]:
+                    # Проверяем, попадает ли подключение в текущую группу
+                    # (в пределах окна от самого раннего подключения в группе)
+                    earliest_in_group = current_group[0][0]
+                    time_diff_minutes = (conn_time - earliest_in_group).total_seconds() / 60
+                    
+                    if time_diff_minutes <= simultaneous_window_minutes:
+                        current_group.append((conn_time, ip))
+                    else:
+                        # Начинаем новую группу
+                        if len(current_group) > 1:
+                            simultaneous_groups.append(current_group)
+                        current_group = [(conn_time, ip)]
+                
+                # Добавляем последнюю группу
+                if len(current_group) > 1:
+                    simultaneous_groups.append(current_group)
+                
+                # Находим группу с максимальным количеством уникальных IP
+                max_simultaneous_ips = 0
+                for group in simultaneous_groups:
+                    unique_ips = len(set(ip for _, ip in group))
+                    max_simultaneous_ips = max(max_simultaneous_ips, unique_ips)
+                
+                # Если есть действительно одновременные подключения с разных IP
+                if max_simultaneous_ips > 1:
+                    simultaneous_count = max_simultaneous_ips
+                    if simultaneous_count > 3:
+                        score = 100.0
+                        reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (> 3)")
+                    else:
+                        score = 80.0
+                        reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP")
+                else:
+                    # Если нет одновременных подключений, используем количество уникальных IP для статистики
+                    simultaneous_count = len(set(ip for _, ip in valid_connections))
+            elif len(valid_connections) == 1:
+                # Одно валидное подключение
+                simultaneous_count = 1
             else:
-                score = 80.0
-                reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP")
+                # Нет валидных подключений (все старше 24 часов) - не считаем как одновременные
+                simultaneous_count = 0
+        elif len(connections) == 1:
+            simultaneous_count = 1
+        else:
+            simultaneous_count = 0
         
         # Анализ быстрой смены IP в истории
         if len(connection_history) > 1:
@@ -298,10 +378,11 @@ class GeoAnalyzer:
                 cities.add(location.get("city", ""))
         
         # Если нет данных о геолокации, возвращаем нулевой скор
+        # Не добавляем это в причины, так как отсутствие данных не является нарушением
         if not ip_locations:
             return GeoScore(
                 score=0.0,
-                reasons=["Нет данных о геолокации IP адресов"],
+                reasons=[],
                 countries=countries,
                 cities=cities,
                 impossible_travel_detected=False
@@ -479,8 +560,9 @@ class IntelligentViolationDetector:
             if asn_score.is_mobile_carrier:
                 raw_score *= 0.7  # Снижаем для мобильных операторов
             
-            # Если есть одновременные подключения, минимум 85
-            if temporal_score.simultaneous_connections_count > 1:
+            # Если есть действительно одновременные подключения (скор > 0), минимум 85
+            # Проверяем, что temporal_score > 0, что означает обнаружение одновременных подключений
+            if temporal_score.score > 0 and temporal_score.simultaneous_connections_count > 1:
                 raw_score = max(raw_score, 85.0)
             
             # Определяем рекомендуемое действие
