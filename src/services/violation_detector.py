@@ -15,7 +15,7 @@ from enum import Enum
 
 from src.services.database import DatabaseService
 from src.services.connection_monitor import ConnectionMonitor, ActiveConnection, ConnectionStats
-from src.services.api_client import APIClient
+from src.services.api_client import RemnawaveApiClient
 from src.utils.logger import logger
 
 
@@ -530,7 +530,7 @@ class IntelligentViolationDetector:
         'hard_block': 95,      # > 95: блокировка + ручная проверка
     }
     
-    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor, api_client: Optional[APIClient] = None):
+    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor, api_client: Optional[RemnawaveApiClient] = None):
         self.db = db_service
         self.connection_monitor = connection_monitor
         self.api_client = api_client
