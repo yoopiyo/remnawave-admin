@@ -23,5 +23,6 @@ COPY src ./src
 COPY locales ./locales
 COPY alembic ./alembic
 COPY alembic.ini .
+COPY scripts ./scripts
 
 CMD ["python", "-m", "src.main"]
