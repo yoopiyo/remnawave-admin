@@ -36,6 +36,18 @@ if not src_dir.exists():
     print(f"Ошибка: директория src не найдена в {project_root}")
     sys.exit(1)
 
+# Проверяем наличие необходимых зависимостей
+try:
+    import httpx
+except ImportError:
+    print("Ошибка: модуль 'httpx' не установлен")
+    print("\nУстановите зависимости проекта:")
+    print(f"  cd {project_root}")
+    print(f"  pip3 install -r requirements.txt")
+    print("\nИли установите httpx отдельно:")
+    print("  pip3 install httpx")
+    sys.exit(1)
+
 # Теперь импортируем модули
 try:
     from src.services.database import DatabaseService
@@ -52,9 +64,9 @@ except ImportError as e:
     print(f"  1. Что файл {src_dir / '__init__.py'} существует")
     print(f"  2. Что файл {src_dir / 'services' / '__init__.py'} существует")
     print(f"  3. Что файл {src_dir / 'services' / 'database.py'} существует")
-    print(f"\nАльтернативный способ запуска:")
+    print(f"\nУстановите зависимости проекта:")
     print(f"  cd {project_root}")
-    print(f"  python3 -m scripts.sync_asn_database --limit 300")
+    print(f"  pip3 install -r requirements.txt")
     sys.exit(1)
 
 
