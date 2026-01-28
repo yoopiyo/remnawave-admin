@@ -87,7 +87,7 @@ class GeoIPService:
     async def _get_client(self) -> httpx.AsyncClient:
         """Получить или создать HTTP клиент."""
         if self._client is None:
-            timeout = httpx.Timeout(connect=5.0, read=10.0)
+            timeout = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=10.0)
             self._client = httpx.AsyncClient(timeout=timeout)
         return self._client
     
