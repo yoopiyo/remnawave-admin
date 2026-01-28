@@ -73,7 +73,8 @@ class XrayLogCollector(BaseCollector):
             return []
 
         connections: list[ConnectionReport] = []
-        seen: set[tuple[str, str]] = set()  # (user_email, ip) — дедупликация за батч
+        # Группируем по (user_email, ip) и используем самое позднее время подключения
+        connections_map: dict[tuple[str, str], tuple[datetime, str]] = {}
         
         lines_count = 0
         accepted_lines = 0
@@ -98,16 +99,25 @@ class XrayLogCollector(BaseCollector):
             # Collector API будет искать пользователя по разным идентификаторам
             user_identifier = f"user_{user_id}"
             key = (user_identifier, client_ip)
-            if key in seen:
-                continue
-            seen.add(key)
+            
             try:
                 connected_at = _parse_timestamp(ts_str)
             except Exception:
                 connected_at = datetime.utcnow()
+            
+            # Сохраняем самое позднее время подключения для каждой пары (user, ip)
+            if key not in connections_map:
+                connections_map[key] = (connected_at, user_identifier)
+            else:
+                existing_time, _ = connections_map[key]
+                if connected_at > existing_time:
+                    connections_map[key] = (connected_at, user_identifier)
+        
+        # Преобразуем в список ConnectionReport
+        for (user_identifier, client_ip), (connected_at, _) in connections_map.items():
             connections.append(
                 ConnectionReport(
-                    user_email=user_identifier,  # Временно используем user_id как email
+                    user_email=user_identifier,
                     ip_address=client_ip,
                     node_uuid=self._node_uuid,
                     connected_at=connected_at,

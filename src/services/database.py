@@ -812,21 +812,53 @@ class DatabaseService:
         node_uuid: Optional[str] = None,
         device_info: Optional[Dict[str, Any]] = None
     ) -> Optional[int]:
-        """Add a user connection record. Returns connection ID."""
+        """
+        Add or update a user connection record.
+        Если есть активное подключение с этим IP, обновляет время подключения.
+        Иначе создаёт новую запись.
+        Returns connection ID.
+        """
         if not self.is_connected:
             return None
         
         async with self.acquire() as conn:
-            result = await conn.fetchval(
+            # Проверяем, есть ли уже активное подключение с этим IP для этого пользователя
+            existing = await conn.fetchrow(
                 """
-                INSERT INTO user_connections (user_uuid, ip_address, node_uuid, device_info)
-                VALUES ($1, $2::inet, $3, $4)
-                RETURNING id
+                SELECT id FROM user_connections
+                WHERE user_uuid = $1 
+                AND ip_address = $2::inet
+                AND disconnected_at IS NULL
+                ORDER BY connected_at DESC
+                LIMIT 1
                 """,
-                user_uuid, ip_address, node_uuid,
-                json.dumps(device_info) if device_info else None
+                user_uuid, ip_address
             )
-            return result
+            
+            if existing:
+                # Обновляем время подключения существующей записи
+                conn_id = existing['id']
+                await conn.execute(
+                    """
+                    UPDATE user_connections
+                    SET connected_at = NOW(), node_uuid = COALESCE($1, node_uuid)
+                    WHERE id = $2
+                    """,
+                    node_uuid, conn_id
+                )
+                return conn_id
+            else:
+                # Создаём новую запись
+                result = await conn.fetchval(
+                    """
+                    INSERT INTO user_connections (user_uuid, ip_address, node_uuid, device_info)
+                    VALUES ($1, $2::inet, $3, $4)
+                    RETURNING id
+                    """,
+                    user_uuid, ip_address, node_uuid,
+                    json.dumps(device_info) if device_info else None
+                )
+                return result
     
     async def get_user_active_connections(
         self,
