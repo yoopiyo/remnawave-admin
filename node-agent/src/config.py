@@ -2,6 +2,8 @@
 Конфигурация Node Agent.
 Переменные окружения или .env в папке node-agent.
 """
+from typing import Optional
+
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,7 +26,16 @@ class Settings(BaseSettings):
     auth_token: str
 
     # Интервал отправки батчей (секунды)
+    # В real-time режиме используется для отправки накопленных подключений
     interval_seconds: int = 30
+
+    # Режим парсинга логов: "polling" (периодический опрос) или "realtime" (отслеживание новых строк)
+    log_parsing_mode: str = "realtime"  # "polling" или "realtime"
+    
+    # Интервал проверки новых строк в real-time режиме (секунды)
+    # Может быть меньше interval_seconds для более быстрой реакции
+    # По умолчанию равен interval_seconds
+    realtime_check_interval_seconds: Optional[float] = None
 
     # Путь к access.log на ноде (Remnawave использует /var/log/remnanode/access.log)
     # В Docker: монтировать том с логами
