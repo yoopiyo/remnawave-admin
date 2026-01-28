@@ -124,15 +124,23 @@ class RemnawaveApiClient:
         start_time = time.time()
         
         for attempt in range(max_retries):
+            attempt_start_time = time.time()
             try:
                 logger.debug("GET request to %s (attempt %d/%d)", full_url, attempt + 1, max_retries)
                 response = await self._client.get(url, params=params)
-                duration_ms = (time.time() - start_time) * 1000
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
                 response.raise_for_status()
-                log_api_call("GET", url, status_code=response.status_code, duration_ms=duration_ms)
+                if attempt > 0:
+                    logger.info(
+                        "GET %s succeeded on attempt %d/%d | attempt_duration=%.2fms | total_duration=%.2fms",
+                        url, attempt + 1, max_retries, attempt_duration_ms, total_duration_ms
+                    )
+                log_api_call("GET", url, status_code=response.status_code, duration_ms=total_duration_ms)
                 return response.json()
             except HTTPStatusError as exc:
-                duration_ms = (time.time() - start_time) * 1000
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
                 log_api_error("GET", url, exc, status_code=exc.response.status_code)
                 status = exc.response.status_code
                 if status in (401, 403):
@@ -156,16 +164,21 @@ class RemnawaveApiClient:
                 raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
             except httpx.ReadTimeout as exc:
                 last_exc = exc
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
                 error_type = type(exc).__name__
                 if attempt < max_retries - 1:
                     delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "Timeout on GET %s: %s, retrying in %.1fs (attempt %d/%d)",
-                        full_url, exc, delay, attempt + 1, max_retries
+                        "Timeout on GET %s: %s | attempt_duration=%.2fms | total_duration=%.2fms | retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, attempt_duration_ms, total_duration_ms, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error("Timeout on GET %s after %d attempts", full_url, max_retries)
+                    logger.error(
+                        "Timeout on GET %s after %d attempts | total_duration=%.2fms",
+                        full_url, max_retries, total_duration_ms
+                    )
                     raise TimeoutError(f"Request timeout on {url}") from exc
             except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
                 last_exc = exc
@@ -397,17 +410,33 @@ class RemnawaveApiClient:
 
     async def _get_with_timeout(self, url: str, timeout: float = 30.0, max_retries: int = 3) -> dict:
         """Выполняет GET запрос с кастомным таймаутом и retry для сетевых ошибок."""
+        from src.utils.logger import log_api_call, log_api_error
+        import time
+        
         full_url = f"{self._client.base_url}{url}"
         last_exc = None
+        start_time = time.time()
         custom_timeout = httpx.Timeout(timeout, connect=15.0, read=timeout, write=15.0, pool=10.0)
         
         for attempt in range(max_retries):
+            attempt_start_time = time.time()
             try:
                 logger.debug("GET request to %s with timeout %.1fs (attempt %d/%d)", full_url, timeout, attempt + 1, max_retries)
                 response = await self._client.get(url, timeout=custom_timeout)
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
                 response.raise_for_status()
+                if attempt > 0:
+                    logger.info(
+                        "GET %s succeeded on attempt %d/%d | attempt_duration=%.2fms | total_duration=%.2fms",
+                        url, attempt + 1, max_retries, attempt_duration_ms, total_duration_ms
+                    )
+                log_api_call("GET", url, status_code=response.status_code, duration_ms=total_duration_ms)
                 return response.json()
             except HTTPStatusError as exc:
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
+                log_api_error("GET", url, exc, status_code=exc.response.status_code)
                 status = exc.response.status_code
                 if status in (401, 403):
                     raise UnauthorizedError(f"Access denied: {status}") from exc
@@ -421,15 +450,20 @@ class RemnawaveApiClient:
                 raise ApiClientError(f"API error {status}", code=f"ERR_API_{status}") from exc
             except httpx.ReadTimeout as exc:
                 last_exc = exc
+                attempt_duration_ms = (time.time() - attempt_start_time) * 1000
+                total_duration_ms = (time.time() - start_time) * 1000
                 if attempt < max_retries - 1:
                     delay = 0.5 * (2 ** attempt)
                     logger.warning(
-                        "Timeout on GET %s: %s, retrying in %.1fs (attempt %d/%d)",
-                        full_url, exc, delay, attempt + 1, max_retries
+                        "Timeout on GET %s: %s | attempt_duration=%.2fms | total_duration=%.2fms | retrying in %.1fs (attempt %d/%d)",
+                        full_url, exc, attempt_duration_ms, total_duration_ms, delay, attempt + 1, max_retries
                     )
                     await asyncio.sleep(delay)
                 else:
-                    logger.error("Timeout on GET %s after %d attempts", full_url, max_retries)
+                    logger.error(
+                        "Timeout on GET %s after %d attempts | total_duration=%.2fms",
+                        full_url, max_retries, total_duration_ms
+                    )
                     raise TimeoutError(f"Request timeout on {url}") from exc
             except (httpx.RemoteProtocolError, httpx.ConnectError) as exc:
                 last_exc = exc
@@ -489,7 +523,8 @@ class RemnawaveApiClient:
             if cached is not None:
                 return cached
         
-        data = await self._get("/api/system/health")
+        # Используем увеличенный таймаут для health check (60 секунд вместо 30)
+        data = await self._get_with_timeout("/api/system/health", timeout=60.0, max_retries=3)
         await cache.set(CacheKeys.HEALTH, data, CacheManager.HEALTH_TTL)
         return data
 
@@ -541,7 +576,8 @@ class RemnawaveApiClient:
             if cached is not None:
                 return cached
         
-        data = await self._get(f"/api/nodes/{node_uuid}")
+        # Используем увеличенный таймаут для медленных запросов (45 секунд)
+        data = await self._get_with_timeout(f"/api/nodes/{node_uuid}", timeout=45.0, max_retries=3)
         await cache.set(cache_key, data, CacheManager.NODES_TTL)
         return data
 
