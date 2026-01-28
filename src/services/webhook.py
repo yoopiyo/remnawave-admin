@@ -10,6 +10,7 @@ from aiogram import Bot
 
 from src.config import get_settings
 from src.services.api_client import api_client, NotFoundError
+from src.services.database import db_service
 from src.services.sync import sync_service
 from src.utils.logger import logger
 from src.utils.notifications import (
@@ -397,6 +398,9 @@ async def _handle_service_event(bot: Bot, event: str, event_data: dict) -> None:
 async def _handle_hwid_event(bot: Bot, event: str, event_data: dict) -> None:
     """Обрабатывает события HWID устройств."""
     logger.info("Sending HWID notification event=%s", event)
+    
+    # Данные об устройствах уже синхронизируются через sync_service в users.raw_data
+    # При следующей синхронизации пользователя количество устройств будет обновлено
     
     await send_hwid_notification(
         bot=bot,

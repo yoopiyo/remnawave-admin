@@ -14,13 +14,12 @@ from pydantic import BaseModel
 from src.services.database import db_service
 from src.services.connection_monitor import ConnectionMonitor
 from src.services.violation_detector import IntelligentViolationDetector
-from src.services.api_client import api_client
 from src.utils.agent_tokens import get_node_by_token
 from src.utils.logger import logger
 
 # Инициализируем сервисы
 connection_monitor = ConnectionMonitor(db_service)
-violation_detector = IntelligentViolationDetector(db_service, connection_monitor, api_client)
+violation_detector = IntelligentViolationDetector(db_service, connection_monitor)
 
 
 router = APIRouter(prefix="/api/v1/connections", tags=["collector"])

@@ -15,7 +15,6 @@ from enum import Enum
 
 from src.services.database import DatabaseService
 from src.services.connection_monitor import ConnectionMonitor, ActiveConnection, ConnectionStats
-from src.services.api_client import RemnawaveApiClient
 from src.utils.logger import logger
 
 
@@ -530,10 +529,9 @@ class IntelligentViolationDetector:
         'hard_block': 95,      # > 95: блокировка + ручная проверка
     }
     
-    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor, api_client: Optional[RemnawaveApiClient] = None):
+    def __init__(self, db_service: DatabaseService, connection_monitor: ConnectionMonitor):
         self.db = db_service
         self.connection_monitor = connection_monitor
-        self.api_client = api_client
         self.temporal_analyzer = TemporalAnalyzer()
         self.geo_analyzer = GeoAnalyzer()
     
@@ -553,16 +551,8 @@ class IntelligentViolationDetector:
             return None
         
         try:
-            # Получаем количество устройств пользователя
-            user_device_count = 1  # По умолчанию 1 устройство
-            if self.api_client:
-                try:
-                    devices_data = await self.api_client.get_user_hwid_devices(user_uuid)
-                    devices = devices_data.get("response", {}).get("devices", [])
-                    user_device_count = len(devices) if devices else 1
-                except Exception as e:
-                    logger.debug("Failed to get user devices count for %s: %s", user_uuid, e)
-                    # Используем значение по умолчанию
+            # Получаем количество устройств пользователя из локальной БД
+            user_device_count = await self.db.get_user_devices_count(user_uuid)
             
             # Получаем активные подключения
             active_connections = await self.connection_monitor.get_user_active_connections(user_uuid)
