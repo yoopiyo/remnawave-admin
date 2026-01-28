@@ -201,8 +201,10 @@ class TemporalAnalyzer:
                     # 1. Оно в пределах окна от самого раннего подключения в группе
                     # 2. Разрыв между подключениями не слишком большой (не более окна одновременности)
                     # 3. Разрыв не превышает порог переподключения (уже проверено выше)
+                    # 4. Разрыв больше 0.1 сек (если 0.0 сек, это разные события в одной секунде из-за округления)
                     if (time_diff_from_earliest_seconds <= simultaneous_window_seconds and 
-                        time_diff_seconds <= simultaneous_window_seconds):
+                        time_diff_seconds <= simultaneous_window_seconds and
+                        time_diff_seconds >= 0.1):  # Игнорируем разницу 0.0 сек (округление времени)
                         current_group.append((conn_time, ip))
                     else:
                         # Начинаем новую группу (есть разрыв, указывающий на последовательное переключение)
@@ -307,7 +309,9 @@ class TemporalAnalyzer:
                 curr_ip = str(curr_conn.get("ip_address", ""))
                 
                 # Если IP разные и переключение быстрое (< 30 секунд)
-                if prev_ip != curr_ip and time_diff_seconds < 30:
+                # НО: если разница 0.0 сек, это не переключение, а разные события в одной секунде
+                # (из-за округления времени до секунды в логах)
+                if prev_ip != curr_ip and 0.1 <= time_diff_seconds < 30:
                     # Проверяем, было ли старое подключение отключено перед новым
                     # Если да, это нормальное переключение сетей, не нарушение
                     is_normal_switch = False

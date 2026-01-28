@@ -30,9 +30,22 @@ LOG_PATTERN = re.compile(
 def _parse_timestamp(s: str) -> datetime:
     """Парсит Xray timestamp: 2026/01/28 11:23:18.306521 или 2026/01/28 11:23:18 -> datetime UTC."""
     try:
-        # Убираем микросекунды если есть
-        ts_clean = s.strip().split('.')[0]
-        return datetime.strptime(ts_clean, "%Y/%m/%d %H:%M:%S")
+        s = s.strip()
+        # Пробуем парсить с микросекундами
+        if '.' in s:
+            try:
+                # Формат: 2026/01/28 11:23:18.306521
+                date_part, time_part = s.split(' ', 1)
+                time_base, microseconds = time_part.split('.', 1)
+                # Ограничиваем микросекунды до 6 цифр
+                microseconds = microseconds[:6].ljust(6, '0')
+                dt = datetime.strptime(f"{date_part} {time_base}.{microseconds}", "%Y/%m/%d %H:%M:%S.%f")
+                return dt
+            except ValueError:
+                pass
+        
+        # Если не получилось с микросекундами, парсим без них
+        return datetime.strptime(s.split('.')[0], "%Y/%m/%d %H:%M:%S")
     except ValueError:
         return datetime.utcnow()
 

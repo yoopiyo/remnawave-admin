@@ -157,6 +157,7 @@ async def receive_connections(
                 continue
             
             # Записываем подключение
+            # Используем время из логов агента, чтобы сохранить микросекунды
             connection_id = await db_service.add_user_connection(
                 user_uuid=user_uuid,
                 ip_address=conn.ip_address,
@@ -167,7 +168,8 @@ async def receive_connections(
                     "bytes_received": conn.bytes_received,
                     "connected_at": conn.connected_at.isoformat() if conn.connected_at else None,
                     "disconnected_at": conn.disconnected_at.isoformat() if conn.disconnected_at else None,
-                }
+                },
+                connected_at=conn.connected_at  # Передаём время из логов агента
             )
             
             if connection_id:

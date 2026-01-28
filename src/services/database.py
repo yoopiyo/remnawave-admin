@@ -810,7 +810,8 @@ class DatabaseService:
         user_uuid: str,
         ip_address: str,
         node_uuid: Optional[str] = None,
-        device_info: Optional[Dict[str, Any]] = None
+        device_info: Optional[Dict[str, Any]] = None,
+        connected_at: Optional[datetime] = None
     ) -> Optional[int]:
         """
         Add or update a user connection record.
@@ -837,14 +838,48 @@ class DatabaseService:
             
             if existing:
                 # Обновляем время подключения существующей записи
+                # Используем самое позднее время (из нового подключения или существующего)
                 conn_id = existing['id']
+                # Получаем текущее время подключения из БД
+                existing_row = await conn.fetchrow(
+                    "SELECT connected_at FROM user_connections WHERE id = $1",
+                    conn_id
+                )
+                existing_time = existing_row['connected_at'] if existing_row else None
+                
+                # Используем самое позднее время
+                if connected_at and existing_time:
+                    # Преобразуем existing_time в datetime если нужно
+                    if isinstance(existing_time, str):
+                        try:
+                            existing_time = datetime.fromisoformat(existing_time.replace('Z', '+00:00'))
+                        except ValueError:
+                            existing_time = None
+                    if isinstance(existing_time, datetime) and isinstance(connected_at, datetime):
+                        # Убираем timezone для сравнения
+                        if existing_time.tzinfo:
+                            existing_time = existing_time.replace(tzinfo=None)
+                        if connected_at.tzinfo:
+                            connected_at_naive = connected_at.replace(tzinfo=None)
+                        else:
+                            connected_at_naive = connected_at
+                        update_time = max(existing_time, connected_at_naive)
+                    else:
+                        update_time = connected_at if connected_at else datetime.utcnow()
+                elif connected_at:
+                    update_time = connected_at
+                elif existing_time:
+                    update_time = existing_time
+                else:
+                    update_time = datetime.utcnow()
+                
                 await conn.execute(
                     """
                     UPDATE user_connections
-                    SET connected_at = NOW(), node_uuid = COALESCE($1, node_uuid)
-                    WHERE id = $2
+                    SET connected_at = $1, node_uuid = COALESCE($2, node_uuid)
+                    WHERE id = $3
                     """,
-                    node_uuid, conn_id
+                    update_time, node_uuid, conn_id
                 )
                 
                 # Если пользователь подключается с новым IP, закрываем старые подключения с другими IP
@@ -864,14 +899,17 @@ class DatabaseService:
                 return conn_id
             else:
                 # Создаём новую запись
+                # Используем переданное время или текущее время
+                insert_time = connected_at if connected_at else datetime.utcnow()
                 result = await conn.fetchval(
                     """
-                    INSERT INTO user_connections (user_uuid, ip_address, node_uuid, device_info)
-                    VALUES ($1, $2::inet, $3, $4)
+                    INSERT INTO user_connections (user_uuid, ip_address, node_uuid, device_info, connected_at)
+                    VALUES ($1, $2::inet, $3, $4, $5)
                     RETURNING id
                     """,
                     user_uuid, ip_address, node_uuid,
-                    json.dumps(device_info) if device_info else None
+                    json.dumps(device_info) if device_info else None,
+                    insert_time
                 )
                 
                 # Если пользователь подключается с новым IP, закрываем старые подключения с другими IP
