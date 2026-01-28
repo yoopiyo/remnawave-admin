@@ -1,0 +1,6 @@
+# Пример access.log для тестирования Node Agent
+# Скопируй этот файл в access.log и добавь реальные строки из Xray
+
+2026/01/28 12:00:00 [Info] app/proxyman/inbound: [user1@example.com] 192.168.1.100:54321 accepted tcp:example.com:443
+2026/01/28 12:00:05 [Info] app/proxyman/inbound: [user2@example.com] 10.0.0.50:12345 accepted tcp:google.com:443
+2026/01/28 12:00:10 [Info] app/proxyman/inbound: [user1@example.com] 192.168.1.100:54322 accepted tcp:github.com:443

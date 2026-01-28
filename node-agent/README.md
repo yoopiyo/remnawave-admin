@@ -53,20 +53,55 @@ python -m src.main
 
 ## Запуск в Docker
 
-Собрать образ из корня репозитория:
+### Вариант 1: Docker Compose (рекомендуется)
 
 ```bash
-docker build -f node-agent/Dockerfile -t remnawave-node-agent ./node-agent
+cd node-agent
+
+# 1. Создай .env файл
+cp .env.example .env
+nano .env  # отредактируй настройки
+
+# 2. Запусти
+docker-compose up -d
+
+# 3. Проверь логи
+docker-compose logs -f
+
+# 4. Останови
+docker-compose down
 ```
 
-Запуск с монтированием логов и переменными:
+**Для локального тестирования** (Admin Bot на хосте):
+```bash
+# 1. Создай тестовый лог (опционально)
+mkdir -p test-logs
+cp test-logs/access.log.example test-logs/access.log
+# Добавь реальные строки из Xray в test-logs/access.log
+
+# 2. В .env укажи:
+# AGENT_COLLECTOR_URL=http://host.docker.internal:8000
+
+# 3. Запусти с локальным compose файлом
+docker-compose -f docker-compose.local.yml up -d
+
+# 4. Проверь логи
+docker-compose -f docker-compose.local.yml logs -f
+```
+
+### Вариант 2: Docker напрямую
 
 ```bash
+# Собери образ
+docker build -f node-agent/Dockerfile -t remnawave-node-agent ./node-agent
+
+# Запусти с переменными
 docker run -d \
-  -e AGENT_NODE_UUID=xxx \
-  -e AGENT_COLLECTOR_URL=http://host.docker.internal:8000 \
-  -e AGENT_AUTH_TOKEN=yyy \
-  -v /path/on/host/to/xray/logs:/var/log/xray:ro \
+  --name remnawave-node-agent \
+  --restart unless-stopped \
+  --env-file node-agent/.env \
+  -v /var/log/remnanode:/var/log/remnanode:ro \
+  --network remnawave-network \
   remnawave-node-agent
 ```
 

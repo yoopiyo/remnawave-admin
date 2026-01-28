@@ -75,7 +75,22 @@ AGENT_XRAY_LOG_PATH=/var/log/remnanode/access.log
 
 ## Шаг 4: Запуск агента
 
-### Docker
+### Docker Compose (рекомендуется)
+
+```bash
+cd node-agent
+
+# Запусти агент
+docker-compose up -d
+
+# Проверь логи
+docker-compose logs -f
+
+# Останови агент
+docker-compose down
+```
+
+### Docker напрямую
 
 ```bash
 # Собери образ (из корня репозитория)
@@ -87,6 +102,7 @@ docker run -d \
   --restart unless-stopped \
   -v /var/log/remnanode:/var/log/remnanode:ro \
   --env-file node-agent/.env \
+  --network remnawave-network \
   remnawave-node-agent
 ```
 

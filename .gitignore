@@ -7,3 +7,8 @@ dist/
 *.log
 log_error.json
 IMPROVEMENTS.md
+
+# Node Agent
+node-agent/.env
+node-agent/test-logs/*.log
+node-agent/test-logs/access.log
