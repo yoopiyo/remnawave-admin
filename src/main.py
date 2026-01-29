@@ -149,7 +149,7 @@ async def check_api_connection() -> bool:
 
 async def run_webhook_server(bot: Bot, port: int) -> None:
     """Запускает webhook сервер в фоновом режиме."""
-    # Сохраняем бот в состоянии приложения для доступа из webhook handlers
+    # Сохраняем бот в состоянии приложения для доступа из webhook handlers и collector API
     webhook_app.state.bot = bot
     
     # Настраиваем логирование uvicorn для подавления предупреждений о некорректных запросах

@@ -27,6 +27,7 @@ class Settings(BaseSettings):
     notifications_topic_hwid: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_HWID")
     notifications_topic_crm: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_CRM")
     notifications_topic_errors: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_ERRORS")
+    notifications_topic_violations: int | None = Field(default=None, alias="NOTIFICATIONS_TOPIC_VIOLATIONS")
     webhook_port: int = Field(default=8080, alias="WEBHOOK_PORT")
     webhook_secret: str | None = Field(default=None, alias="WEBHOOK_SECRET")
     
@@ -64,6 +65,10 @@ class Settings(BaseSettings):
     def get_topic_for_errors(self) -> int | None:
         """Возвращает топик для уведомлений об ошибках."""
         return self.notifications_topic_errors or self.notifications_topic_id
+
+    def get_topic_for_violations(self) -> int | None:
+        """Возвращает топик для уведомлений о нарушениях/подозреваемых пользователях."""
+        return self.notifications_topic_violations or self.notifications_topic_id
 
     @field_validator("notifications_chat_id", mode="before")
     @classmethod

@@ -7,15 +7,17 @@ Endpoint: POST /api/v1/connections/batch
 from datetime import datetime
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Header
+from fastapi import APIRouter, Depends, HTTPException, Header, Request
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
+from aiogram import Bot
 
 from src.services.database import db_service
 from src.services.connection_monitor import ConnectionMonitor
 from src.services.violation_detector import IntelligentViolationDetector
 from src.utils.agent_tokens import get_node_by_token
 from src.utils.logger import logger
+from src.utils.notifications import send_violation_notification
 
 # Инициализируем сервисы
 connection_monitor = ConnectionMonitor(db_service)
@@ -104,6 +106,7 @@ async def verify_agent_token(authorization: str = Header(..., alias="Authorizati
 @router.post("/batch")
 async def receive_connections(
     report: BatchReport,
+    request: Request,
     node_uuid: str = Depends(verify_agent_token),
 ):
     """
@@ -298,6 +301,39 @@ async def receive_connections(
                                 violation_score.recommended_action.value,
                                 violation_score.reasons[:3]  # Первые 3 причины
                             )
+                            
+                            # Отправляем уведомление в Telegram топик
+                            try:
+                                bot: Bot | None = getattr(request.app.state, 'bot', None)
+                                if bot:
+                                    # Преобразуем ViolationScore в словарь для функции уведомлений
+                                    violation_dict = {
+                                        'total': violation_score.total,
+                                        'recommended_action': violation_score.recommended_action,
+                                        'reasons': violation_score.reasons,
+                                        'breakdown': violation_score.breakdown,
+                                        'confidence': violation_score.confidence,
+                                    }
+                                    
+                                    # Получаем информацию о пользователе из БД
+                                    user_info = await db_service.get_user_by_uuid(user_uuid)
+                                    
+                                    # Отправляем уведомление асинхронно (не блокируем обработку запроса)
+                                    await send_violation_notification(
+                                        bot=bot,
+                                        user_uuid=user_uuid,
+                                        violation_score=violation_dict,
+                                        user_info=user_info
+                                    )
+                                else:
+                                    logger.debug("Bot not available in app.state, skipping violation notification")
+                            except Exception as notify_error:
+                                logger.warning(
+                                    "Failed to send violation notification for user %s: %s",
+                                    user_uuid,
+                                    notify_error,
+                                    exc_info=True
+                                )
                         else:
                             logger.debug(
                                 "User %s violation check: score=%.1f, action=%s",
