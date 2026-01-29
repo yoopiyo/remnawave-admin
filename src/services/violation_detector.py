@@ -226,19 +226,36 @@ class TemporalAnalyzer:
                 # Если есть действительно одновременные подключения с разных IP
                 if max_simultaneous_ips > 1:
                     simultaneous_count = max_simultaneous_ips
-                    # Учитываем количество устройств пользователя
-                    # Если количество одновременных подключений не превышает количество устройств + 1,
-                    # это может быть нормальным (например, переключение между сетями)
-                    if simultaneous_count > max_allowed_simultaneous + 1:
-                        if simultaneous_count > 3:
+                    # Учитываем количество устройств пользователя с буфером для переключения сетей
+                    # Буфер +2 учитывает:
+                    # - Переключение WiFi <-> Mobile (кратковременно 2 IP от одного устройства)
+                    # - Роутинг с несколькими точками выхода
+                    # - Погрешности определения времени отключения
+                    network_switch_buffer = 2
+                    effective_threshold = max_allowed_simultaneous + network_switch_buffer
+
+                    # Если пользователь имеет много устройств (3+), даём дополнительный буфер
+                    # т.к. несколько устройств могут одновременно переключать сети
+                    if user_device_count >= 3:
+                        effective_threshold += 1
+
+                    if simultaneous_count > effective_threshold:
+                        # Значительное превышение - вероятно шаринг
+                        excess = simultaneous_count - effective_threshold
+                        if excess >= 3 or simultaneous_count > 5:
+                            # Сильное превышение - высокий скор
                             score = 100.0
-                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (> 3, устройств: {user_device_count})")
-                        else:
+                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (превышение на {excess}, лимит: {effective_threshold}, устройств: {user_device_count})")
+                        elif excess >= 2:
+                            # Умеренное превышение
                             score = 80.0
-                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (устройств: {user_device_count})")
-                    # Если количество подключений соответствует количеству устройств или немного больше,
-                    # это может быть нормальным (переключение сетей, несколько устройств)
-                    # Не добавляем скор, но оставляем для статистики
+                            reasons.append(f"Одновременные подключения с {simultaneous_count} разных IP (превышение на {excess}, лимит: {effective_threshold}, устройств: {user_device_count})")
+                        else:
+                            # Минимальное превышение на 1 - может быть ложное срабатывание
+                            # Используем низкий скор, чтобы не блокировать сразу
+                            score = 40.0
+                            reasons.append(f"Возможно избыточные подключения: {simultaneous_count} IP (лимит: {effective_threshold}, устройств: {user_device_count})")
+                    # Если количество подключений в пределах нормы - не добавляем скор
                 else:
                     # Если нет одновременных подключений, используем количество уникальных IP для статистики
                     simultaneous_count = len(set(ip for _, ip in valid_connections))
@@ -385,30 +402,173 @@ class TemporalAnalyzer:
 class GeoAnalyzer:
     """
     Анализ географического распределения IP.
-    
+
     Правила:
     - Все IP из одного города = 0
-    - IP из разных городов одной страны = +5
+    - IP из одной агломерации (пригороды) = 0 (нормально)
+    - IP из разных городов одной страны (далеко) = +5
     - IP из разных стран, последовательно, реалистично = +15
     - IP из разных стран, нереалистичное время = +50
     - IP из разных стран одновременно = +90
     """
-    
+
     # Скорости перемещения (км/ч)
     TRAVEL_SPEEDS = {
         'same_city': 50,      # км/ч (такси/метро)
         'same_country': 200,  # км/ч (поезд/машина)
         'international': 800, # км/ч (самолёт)
     }
+
+    # Агломерации и пригороды - города, которые считаются одной локацией
+    # Ключ - название агломерации, значение - список городов (включая центр)
+    METROPOLITAN_AREAS = {
+        # Свердловская область
+        'yekaterinburg': [
+            'yekaterinburg', 'ekaterinburg', 'sredneuralsk', 'verkhnyaya pyshma',
+            'aramil', 'berezovsky', 'pervouralsk', 'revda', 'polevskoy',
+            'sredneuralsk', 'verkhniaya pyshma', 'koltsovo', 'sysert'
+        ],
+        # Московская область
+        'moscow': [
+            'moscow', 'moskva', 'zelenograd', 'khimki', 'mytishchi', 'korolev',
+            'lyubertsy', 'krasnogorsk', 'balashikha', 'podolsk', 'odintsovo',
+            'shchyolkovo', 'dolgoprudny', 'reutov', 'lobnya', 'zhukovsky',
+            'elektrostal', 'pushkino', 'sergiev posad', 'noginsk', 'orekhovo-zuyevo',
+            'fryazino', 'ivanteevka', 'vidnoye', 'domodedovo', 'vnukovo'
+        ],
+        # Санкт-Петербург
+        'saint_petersburg': [
+            'saint petersburg', 'st. petersburg', 'st petersburg', 'petersburg',
+            'sankt-peterburg', 'pushkin', 'kolpino', 'petrodvorets', 'lomonosov',
+            'zelenogorsk', 'sestroretsk', 'kronstadt', 'gatchina', 'vsevolozhsk',
+            'tosno', 'kirishi', 'kirovsk', 'murino', 'kudrovo'
+        ],
+        # Казань
+        'kazan': [
+            'kazan', 'vysokaya gora', 'zelenodolsk', 'laishevo', 'pestretsy'
+        ],
+        # Новосибирск
+        'novosibirsk': [
+            'novosibirsk', 'berdsk', 'akademgorodok', 'ob', 'koltsovo'
+        ],
+        # Нижний Новгород
+        'nizhny_novgorod': [
+            'nizhny novgorod', 'nizhnij novgorod', 'bor', 'dzerzhinsk', 'kstovo'
+        ],
+        # Самара
+        'samara': [
+            'samara', 'togliatti', 'tolyatti', 'syzran', 'novokuybyshevsk', 'chapayevsk'
+        ],
+        # Ростов-на-Дону
+        'rostov': [
+            'rostov-on-don', 'rostov-na-donu', 'bataysk', 'aksay', 'novocherkassk', 'taganrog'
+        ],
+        # Красноярск
+        'krasnoyarsk': [
+            'krasnoyarsk', 'divnogorsk', 'sosnovoborsk', 'zheleznogorsk'
+        ],
+        # Челябинск
+        'chelyabinsk': [
+            'chelyabinsk', 'kopeysk', 'kopeisk', 'zlatoust', 'miass'
+        ],
+        # Уфа
+        'ufa': [
+            'ufa', 'sterlitamak', 'salavat', 'neftekamsk'
+        ],
+        # Пермь
+        'perm': [
+            'perm', 'krasnokamsk', 'chusovoy', 'lysva', 'berezniki'
+        ],
+        # Волгоград
+        'volgograd': [
+            'volgograd', 'volzhsky', 'volzhskiy', 'kamyshin'
+        ],
+        # Воронеж
+        'voronezh': [
+            'voronezh', 'novovoronezh', 'semiluki'
+        ],
+        # Краснодар
+        'krasnodar': [
+            'krasnodar', 'goryachy klyuch', 'dinskaya', 'korenovsk'
+        ],
+        # Сочи
+        'sochi': [
+            'sochi', 'adler', 'lazarevskoye', 'krasnaya polyana', 'dagomys', 'khosta'
+        ],
+    }
+
+    # Минимальное расстояние (км), при котором города считаются "далеко" друг от друга
+    MIN_DISTANCE_FOR_DIFFERENT_CITIES = 100
     
     def __init__(self, geoip_service: Optional[GeoIPService] = None):
         """
         Инициализирует GeoAnalyzer.
-        
+
         Args:
             geoip_service: Сервис для получения геолокации (по умолчанию используется глобальный)
         """
         self.geoip = geoip_service or get_geoip_service()
+        # Строим обратный индекс: город -> агломерация
+        self._city_to_metro: Dict[str, str] = {}
+        for metro_name, cities in self.METROPOLITAN_AREAS.items():
+            for city in cities:
+                self._city_to_metro[city.lower()] = metro_name
+
+    def _normalize_city_name(self, city: str) -> str:
+        """
+        Нормализует название города для сравнения.
+
+        Убирает диакритику, приводит к нижнему регистру, убирает лишние символы.
+        """
+        if not city:
+            return ""
+        # Приводим к нижнему регистру и убираем лишние пробелы
+        normalized = city.lower().strip()
+        # Убираем распространённые суффиксы
+        for suffix in [' city', ' gorod', ' oblast', ' region']:
+            if normalized.endswith(suffix):
+                normalized = normalized[:-len(suffix)].strip()
+        return normalized
+
+    def _get_metro_area(self, city: str) -> Optional[str]:
+        """
+        Возвращает название агломерации для города или None, если город не в агломерации.
+        """
+        if not city:
+            return None
+        normalized = self._normalize_city_name(city)
+        return self._city_to_metro.get(normalized)
+
+    def _are_cities_in_same_metro(self, city1: str, city2: str) -> bool:
+        """
+        Проверяет, находятся ли два города в одной агломерации.
+
+        Args:
+            city1: Первый город
+            city2: Второй город
+
+        Returns:
+            True если города в одной агломерации или это один и тот же город
+        """
+        if not city1 or not city2:
+            return False
+
+        normalized1 = self._normalize_city_name(city1)
+        normalized2 = self._normalize_city_name(city2)
+
+        # Если названия идентичны после нормализации
+        if normalized1 == normalized2:
+            return True
+
+        # Проверяем агломерации
+        metro1 = self._city_to_metro.get(normalized1)
+        metro2 = self._city_to_metro.get(normalized2)
+
+        # Если оба города в одной агломерации
+        if metro1 and metro2 and metro1 == metro2:
+            return True
+
+        return False
     
     async def _get_ip_metadata(self, ip_address: str) -> Optional[IPMetadata]:
         """
@@ -595,9 +755,28 @@ class GeoAnalyzer:
                 
                 # Разные города одной страны
                 elif prev_country == curr_country and prev_city != curr_city and prev_city and curr_city:
-                    score = max(score, 5.0)
-                    if not reasons:
-                        reasons.append(f"Разные города одной страны: {prev_city} → {curr_city}")
+                    # Проверяем, находятся ли города в одной агломерации (пригороды)
+                    # Если да, это нормальное поведение - не добавляем скор
+                    if self._are_cities_in_same_metro(prev_city, curr_city):
+                        # Города в одной агломерации - это нормально (пригороды, районы города)
+                        # Не добавляем скор и не добавляем причину
+                        pass
+                    else:
+                        # Города в разных регионах - проверяем расстояние
+                        # Если есть координаты, проверяем реальное расстояние
+                        if prev_lat and prev_lon and curr_lat and curr_lon:
+                            distance_km = self._haversine_distance(prev_lat, prev_lon, curr_lat, curr_lon)
+                            # Только если расстояние > 100 км, добавляем минимальный скор
+                            if distance_km > self.MIN_DISTANCE_FOR_DIFFERENT_CITIES:
+                                score = max(score, 5.0)
+                                if not reasons:
+                                    reasons.append(f"Разные города одной страны: {prev_city} → {curr_city} ({distance_km:.0f} км)")
+                            # Если расстояние < 100 км, скорее всего это близкие города или погрешность GeoIP
+                        else:
+                            # Нет координат - добавляем минимальный скор на всякий случай
+                            score = max(score, 5.0)
+                            if not reasons:
+                                reasons.append(f"Разные города одной страны: {prev_city} → {curr_city}")
         
         return GeoScore(
             score=min(score, 100.0),
@@ -1295,10 +1474,14 @@ class IntelligentViolationDetector:
                 elif asn_score.is_vpn:
                     raw_score *= 1.8  # Сильно повышаем для VPN
             
-            # Если есть действительно одновременные подключения (скор > 0), минимум 85
-            # Проверяем, что temporal_score > 0, что означает обнаружение одновременных подключений
-            if temporal_score.score > 0 and temporal_score.simultaneous_connections_count > 1:
+            # Если есть серьёзные одновременные подключения (высокий скор), устанавливаем минимум
+            # Но только если temporal_score достаточно высокий (80+), что указывает на реальное нарушение
+            # Не применяем минимум для пограничных случаев (переключение сетей, несколько устройств)
+            if temporal_score.score >= 80.0 and temporal_score.simultaneous_connections_count > 1:
                 raw_score = max(raw_score, 85.0)
+            elif temporal_score.score >= 40.0 and temporal_score.simultaneous_connections_count > 1:
+                # Пограничные случаи - устанавливаем минимум для мониторинга, но не блокировки
+                raw_score = max(raw_score, 50.0)
             
             # Определяем рекомендуемое действие
             recommended_action = self._get_action(raw_score)
