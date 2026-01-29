@@ -41,25 +41,71 @@ class ASNParser:
     RIPE_API_URL = "https://rest.db.ripe.net"
     
     # Ключевые слова для определения типа провайдера
+    # Классификация по типам из таблицы статистики
+    
+    # Крупные провайдеры (ER-Telecom, ТТК, Ростелеком)
+    ISP_KEYWORDS = {
+        'ростелеком', 'rostelecom', 'рт', 'rt', 'er-telecom', 'er telecom', 'ттк', 'ttk',
+        'transit', 'транзит', 'mts', 'мтс', 'mts telecom', 'мтс телеком',
+        'большой провайдер', 'major isp', 'tier 1', 'tier-1'
+    }
+    
+    # Региональные ISP
+    REGIONAL_ISP_KEYWORDS = {
+        'региональный', 'regional', 'областной', 'область', 'область связи',
+        'городской', 'city', 'муниципальный', 'municipal', 'локальный', 'local',
+        'районный', 'district', 'областной провайдер', 'regional isp'
+    }
+    
+    # Проводной ШПД (Broadband, DSL, GPON)
+    FIXED_KEYWORDS = {
+        'dsl', 'adsl', 'vdsl', 'gpon', 'ftth', 'fttb', 'ethernet', 'ethernet',
+        'проводной', 'wired', 'broadband', 'широкополосный', 'шпд',
+        'кабель', 'cable', 'оптика', 'fiber', 'волокно', 'волоконно',
+        'домашний интернет', 'home internet', 'residential', 'домашний'
+    }
+    
+    # Сети мобильных операторов (MegaFon, MTS, Beeline, Tele2)
+    MOBILE_ISP_KEYWORDS = {
+        'мегафон', 'megafon', 'мтс', 'mts', 'билайн', 'beeline', 'теле2', 'tele2',
+        'йота', 'yota', 'ростелеком мобайл', 'rostelecom mobile',
+        'мобильный оператор', 'mobile operator', 'cellular operator',
+        'сотовый оператор', 'mobile network', 'мобильная сеть'
+    }
+    
+    # Хостинг (Selectel, Timeweb, Beget, VDSina)
+    HOSTING_KEYWORDS = {
+        'selectel', 'селектел', 'timeweb', 'таймвеб', 'beget', 'бегет',
+        'vdsina', 'вдсина', 'хостинг', 'hosting', 'vps', 'vds', 'dedicated',
+        'сервер', 'server', 'colo', 'colocation', 'idc', 'datacenter',
+        'data center', 'датацентр', 'cloud', 'облако', 'cloud provider'
+    }
+    
+    # Корпоративные (Yandex, Mail.ru)
+    BUSINESS_KEYWORDS = {
+        'yandex', 'яндекс', 'mail.ru', 'mailru', 'корпоративный', 'corporate',
+        'enterprise', 'бизнес', 'business', 'компания', 'company',
+        'корпорация', 'corporation', 'холдинг', 'holding'
+    }
+    
+    # Точно мобильные пулы (CGNAT, LTE, GPRS)
     MOBILE_KEYWORDS = {
-        'мтс', 'mts', 'мегафон', 'megafon', 'билайн', 'beeline', 'теле2', 'tele2',
-        'йота', 'yota', 'ростелеком мобайл', 'rostelecom mobile', 'мобильный', 'mobile',
-        'сотовый', 'cellular', 'lte', '4g', '5g'
+        'cgnat', 'cg-nat', 'lte', '4g', '5g', 'gprs', 'umts', 'wcdma',
+        'мобильный пул', 'mobile pool', 'mobile ip', 'мобильный ip',
+        'nat', 'carrier grade nat', 'carrier-grade nat'
     }
     
-    DATACENTER_KEYWORDS = {
-        'datacenter', 'data center', 'хостинг', 'hosting', 'сервер', 'server',
-        'colo', 'colocation', 'idc', 'internet data center'
+    # Магистральная инфраструктура
+    INFRASTRUCTURE_KEYWORDS = {
+        'магистраль', 'backbone', 'транзит', 'transit', 'peering', 'пиринг',
+        'ix', 'internet exchange', 'интернет-обмен', 'транспорт', 'transport',
+        'core network', 'основная сеть', 'магистральная сеть'
     }
     
+    # VPN/Proxy (для обратной совместимости)
     VPN_KEYWORDS = {
         'vpn', 'прокси', 'proxy', 'анонимайзер', 'anonymizer', 'privacy',
         'tunnel', 'туннель'
-    }
-    
-    ISP_KEYWORDS = {
-        'isp', 'internet service provider', 'провайдер', 'provider', 'интернет',
-        'internet', 'broadband', 'широкополосный'
     }
     
     # Маппинг регионов РФ (для определения региона из описания)
@@ -138,33 +184,66 @@ class ASNParser:
         """
         Классифицирует тип провайдера на основе названия организации и описания.
         
+        Использует детальную классификацию:
+        - mobile: Точно мобильные пулы (CGNAT, LTE, GPRS)
+        - mobile_isp: Сети мобильных операторов (MegaFon, MTS, Beeline, Tele2)
+        - isp: Крупные провайдеры (ER-Telecom, ТТК, Ростелеком)
+        - regional_isp: Региональные ISP
+        - fixed: Проводной ШПД (Broadband, DSL, GPON)
+        - hosting: Хостинг (Selectel, Timeweb, Beget, VDSina)
+        - business: Корпоративные (Yandex, Mail.ru)
+        - infrastructure: Магистральная инфраструктура
+        - vpn: VPN/Proxy (для обратной совместимости)
+        
         Args:
             org_name: Название организации
             description: Описание ASN
         
         Returns:
-            Тип провайдера: mobile/residential/datacenter/vpn/isp или None
+            Тип провайдера или None
         """
         text = (org_name + " " + (description or "")).lower()
         
-        # Проверяем мобильные операторы
+        # Приоритет проверки: от более специфичных к общим
+        
+        # 1. Точно мобильные пулы (CGNAT, LTE, GPRS) - самый специфичный
         if any(keyword in text for keyword in self.MOBILE_KEYWORDS):
             return 'mobile'
         
-        # Проверяем VPN
+        # 2. VPN/Proxy
         if any(keyword in text for keyword in self.VPN_KEYWORDS):
             return 'vpn'
         
-        # Проверяем датацентры
-        if any(keyword in text for keyword in self.DATACENTER_KEYWORDS):
-            return 'datacenter'
+        # 3. Хостинг (проверяем раньше, так как может содержать "server")
+        if any(keyword in text for keyword in self.HOSTING_KEYWORDS):
+            return 'hosting'
         
-        # Проверяем ISP (домашние провайдеры)
+        # 4. Корпоративные сети
+        if any(keyword in text for keyword in self.BUSINESS_KEYWORDS):
+            return 'business'
+        
+        # 5. Магистральная инфраструктура
+        if any(keyword in text for keyword in self.INFRASTRUCTURE_KEYWORDS):
+            return 'infrastructure'
+        
+        # 6. Сети мобильных операторов (проверяем после mobile, так как более общий)
+        if any(keyword in text for keyword in self.MOBILE_ISP_KEYWORDS):
+            return 'mobile_isp'
+        
+        # 7. Проводной ШПД (проверяем перед ISP, так как более специфичный)
+        if any(keyword in text for keyword in self.FIXED_KEYWORDS):
+            return 'fixed'
+        
+        # 8. Крупные провайдеры
         if any(keyword in text for keyword in self.ISP_KEYWORDS):
             return 'isp'
         
-        # По умолчанию считаем residential (домашний провайдер)
-        return 'residential'
+        # 9. Региональные ISP (проверяем последним среди ISP)
+        if any(keyword in text for keyword in self.REGIONAL_ISP_KEYWORDS):
+            return 'regional_isp'
+        
+        # По умолчанию считаем fixed (проводной ШПД) - наиболее распространённый тип
+        return 'fixed'
     
     def _extract_region_city(self, org_name: str, description: Optional[str] = None) -> tuple[Optional[str], Optional[str]]:
         """

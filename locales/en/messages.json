@@ -715,6 +715,7 @@
     "active_asn": "Active ASN",
     "last_sync": "Last sync",
     "never": "Never",
+    "by_type": "By provider types",
     "db_not_connected": "⚠️ Database not connected",
     "enter_limit": "Enter the number of ASN to sync (positive number):",
     "invalid_limit": "⚠️ Invalid limit. Enter a positive number.",

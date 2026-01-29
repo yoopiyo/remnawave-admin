@@ -774,19 +774,31 @@ async def _fetch_asn_sync_status_text() -> str:
             return _("asn_sync.db_not_connected")
         
         async with db_service.acquire() as conn:
-            # Получаем статистику по ASN базе
-            query = """
+            # Получаем общую статистику по ASN базе
+            query_total = """
                 SELECT 
                     COUNT(*) as total,
                     COUNT(*) FILTER (WHERE is_active = true) as active,
                     MAX(last_synced_at) as last_sync
                 FROM asn_russia
             """
-            row = await conn.fetchrow(query)
+            row = await conn.fetchrow(query_total)
             
             total = row['total'] if row else 0
             active = row['active'] if row else 0
             last_sync = row['last_sync'] if row else None
+            
+            # Получаем статистику по типам провайдеров
+            query_types = """
+                SELECT 
+                    provider_type,
+                    COUNT(*) as count
+                FROM asn_russia
+                WHERE is_active = true AND provider_type IS NOT NULL
+                GROUP BY provider_type
+                ORDER BY count DESC
+            """
+            type_rows = await conn.fetch(query_types)
             
             lines = [
                 f"*{_('asn_sync.status_title')}*",
@@ -804,6 +816,32 @@ async def _fetch_asn_sync_status_text() -> str:
                 lines.append(f"{_('asn_sync.last_sync')}: {last_sync_str}")
             else:
                 lines.append(f"{_('asn_sync.last_sync')}: {_('asn_sync.never')}")
+            
+            # Добавляем статистику по типам провайдеров
+            if type_rows:
+                lines.append("")
+                lines.append(f"*{_('asn_sync.by_type')}:*")
+                
+                # Маппинг типов на русские названия
+                type_names = {
+                    'isp': 'Крупные провайдеры',
+                    'regional_isp': 'Региональные ISP',
+                    'fixed': 'Проводной ШПД',
+                    'mobile_isp': 'Мобильные операторы',
+                    'hosting': 'Хостинг',
+                    'business': 'Корпоративные',
+                    'mobile': 'Мобильные пулы',
+                    'infrastructure': 'Магистральная инфраструктура',
+                    'vpn': 'VPN/Proxy',
+                    'residential': 'Домашние',
+                    'datacenter': 'Датацентры',
+                }
+                
+                for type_row in type_rows:
+                    provider_type = type_row['provider_type']
+                    count = type_row['count']
+                    type_name = type_names.get(provider_type, provider_type)
+                    lines.append(f"  {type_name}: *{count}*")
             
             return "\n".join(lines)
             

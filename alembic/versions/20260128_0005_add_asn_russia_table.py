@@ -25,7 +25,7 @@ def upgrade() -> None:
         sa.Column('asn', sa.Integer(), nullable=False, primary_key=True, comment='ASN номер'),
         sa.Column('org_name', sa.String(500), nullable=False, comment='Название организации'),
         sa.Column('org_name_en', sa.String(500), nullable=True, comment='Название организации (английский)'),
-        sa.Column('provider_type', sa.String(20), nullable=True, comment='Тип провайдера: mobile/residential/datacenter/vpn/isp'),
+        sa.Column('provider_type', sa.String(20), nullable=True, comment='Тип провайдера: isp/regional_isp/fixed/mobile_isp/hosting/business/mobile/infrastructure/vpn'),
         sa.Column('region', sa.String(100), nullable=True, comment='Регион РФ'),
         sa.Column('city', sa.String(100), nullable=True, comment='Город'),
         sa.Column('country_code', sa.String(2), nullable=False, server_default='RU', comment='Код страны'),

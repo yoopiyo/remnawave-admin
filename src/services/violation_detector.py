@@ -614,13 +614,42 @@ class ASNAnalyzer:
     
     Использует локальную базу ASN по РФ для более точного определения типа провайдера.
     
-    Правила:
-    - Мобильный оператор = ×0.5 модификатор (снижаем подозрительность)
-    - Домашний провайдер = ×1.0 (стандартный)
-    - Датацентр = ×1.5 (повышенное внимание)
-    - VPN = ×1.2 (может быть легитимно)
-    - Tor = ×2.0 (высокий риск)
+    Детальная классификация типов провайдеров:
+    - mobile: Точно мобильные пулы (CGNAT, LTE, GPRS) - ×0.3 модификатор (низкая подозрительность)
+    - mobile_isp: Сети мобильных операторов (MegaFon, MTS, Beeline, Tele2) - ×0.5 модификатор
+    - fixed: Проводной ШПД (Broadband, DSL, GPON) - ×0.8 модификатор (норма)
+    - isp: Крупные провайдеры (ER-Telecom, ТТК, Ростелеком) - ×1.0 модификатор (стандартный)
+    - regional_isp: Региональные ISP - ×1.0 модификатор (стандартный)
+    - business: Корпоративные (Yandex, Mail.ru) - ×1.2 модификатор (повышенное внимание)
+    - hosting: Хостинг (Selectel, Timeweb, Beget, VDSina) - ×1.5 модификатор (высокое внимание)
+    - infrastructure: Магистральная инфраструктура - ×1.3 модификатор
+    - vpn: VPN/Proxy - ×1.8 модификатор (очень высокое внимание)
     """
+    
+    # Модификаторы подозрительности для разных типов провайдеров
+    PROVIDER_TYPE_MODIFIERS = {
+        'mobile': 0.3,           # Мобильные пулы - очень низкая подозрительность
+        'mobile_isp': 0.5,       # Мобильные операторы - низкая подозрительность
+        'fixed': 0.8,           # Проводной ШПД - норма
+        'isp': 1.0,             # Крупные провайдеры - стандарт
+        'regional_isp': 1.0,     # Региональные ISP - стандарт
+        'residential': 1.0,      # Домашние (legacy) - стандарт
+        'business': 1.2,        # Корпоративные - повышенное внимание
+        'infrastructure': 1.3,   # Магистральная инфраструктура - повышенное внимание
+        'hosting': 1.5,         # Хостинг - высокое внимание
+        'datacenter': 1.5,      # Датацентр (legacy) - высокое внимание
+        'vpn': 1.8,             # VPN/Proxy - очень высокое внимание
+        'unknown': 1.0,         # Неизвестный тип - стандарт
+    }
+    
+    # Типы провайдеров, которые считаются мобильными
+    MOBILE_TYPES = {'mobile', 'mobile_isp'}
+    
+    # Типы провайдеров, которые считаются датацентрами/хостингом
+    DATACENTER_TYPES = {'hosting', 'datacenter'}
+    
+    # Типы провайдеров, которые считаются VPN
+    VPN_TYPES = {'vpn'}
     
     def __init__(self, geoip_service: Optional[GeoIPService] = None, db_service: Optional[DatabaseService] = None):
         """
@@ -678,54 +707,96 @@ class ASNAnalyzer:
                 is_vpn=False
             )
         
-        # Анализируем типы провайдеров
+        # Анализируем типы провайдеров с детальной классификацией
+        provider_type_counts: Dict[str, int] = {}
         mobile_count = 0
         datacenter_count = 0
         vpn_count = 0
-        residential_count = 0
+        business_count = 0
+        infrastructure_count = 0
         
         for metadata in ip_metadata.values():
             if metadata.connection_type:
                 asn_types.add(metadata.connection_type)
+                provider_type = metadata.connection_type
                 
-                if metadata.connection_type == 'mobile':
+                # Подсчитываем по типам
+                provider_type_counts[provider_type] = provider_type_counts.get(provider_type, 0) + 1
+                
+                # Определяем категории для обратной совместимости
+                if provider_type in self.MOBILE_TYPES:
                     mobile_count += 1
                     is_mobile_carrier = True
-                elif metadata.connection_type == 'datacenter':
+                elif provider_type in self.DATACENTER_TYPES:
                     datacenter_count += 1
                     is_datacenter = True
-                elif metadata.connection_type == 'vpn':
+                elif provider_type in self.VPN_TYPES:
                     vpn_count += 1
                     is_vpn = True
-                elif metadata.connection_type == 'residential':
-                    residential_count += 1
+                elif provider_type == 'business':
+                    business_count += 1
+                elif provider_type == 'infrastructure':
+                    infrastructure_count += 1
         
-        # Оценка на основе типов провайдеров
-        # Датацентры и VPN в активных подключениях - подозрительно
+        # Оценка на основе типов провайдеров в активных подключениях
         active_ips = {str(conn.ip_address) for conn in connections}
+        active_provider_types: Dict[str, int] = {}
+        
+        for ip, meta in ip_metadata.items():
+            if ip in active_ips and meta.connection_type:
+                provider_type = meta.connection_type
+                active_provider_types[provider_type] = active_provider_types.get(provider_type, 0) + 1
+        
+        # Подсчитываем подозрительные типы в активных подключениях
         active_datacenter_count = sum(
-            1 for ip, meta in ip_metadata.items()
-            if ip in active_ips and meta.connection_type == 'datacenter'
+            count for ptype, count in active_provider_types.items()
+            if ptype in self.DATACENTER_TYPES
         )
         active_vpn_count = sum(
-            1 for ip, meta in ip_metadata.items()
-            if ip in active_ips and meta.connection_type == 'vpn'
+            count for ptype, count in active_provider_types.items()
+            if ptype in self.VPN_TYPES
+        )
+        active_business_count = sum(
+            count for ptype, count in active_provider_types.items()
+            if ptype == 'business'
+        )
+        active_infrastructure_count = sum(
+            count for ptype, count in active_provider_types.items()
+            if ptype == 'infrastructure'
         )
         
+        # Оценка на основе типов провайдеров
+        # Хостинг/датацентры - очень подозрительно
         if active_datacenter_count > 0:
-            score += 20.0
-            reasons.append(f"Подключения через датацентр ({active_datacenter_count} IP)")
+            score += 25.0
+            reasons.append(f"Подключения через хостинг/датацентр ({active_datacenter_count} IP)")
         
+        # VPN - подозрительно
         if active_vpn_count > 0:
-            score += 10.0
+            score += 15.0
             reasons.append(f"Подключения через VPN ({active_vpn_count} IP)")
         
-        # Если все подключения через датацентр/VPN - более подозрительно
+        # Корпоративные сети - умеренно подозрительно (может быть шаринг)
+        if active_business_count > 0:
+            score += 10.0
+            reasons.append(f"Подключения через корпоративные сети ({active_business_count} IP)")
+        
+        # Магистральная инфраструктура - редко используется конечными пользователями
+        if active_infrastructure_count > 0:
+            score += 8.0
+            reasons.append(f"Подключения через магистральную инфраструктуру ({active_infrastructure_count} IP)")
+        
+        # Если большинство подключений через подозрительные типы - более критично
         if len(active_ips) > 0:
-            datacenter_ratio = active_datacenter_count / len(active_ips)
-            if datacenter_ratio > 0.5:
-                score += 15.0
-                reasons.append("Большинство подключений через датацентр")
+            suspicious_count = active_datacenter_count + active_vpn_count + active_business_count
+            suspicious_ratio = suspicious_count / len(active_ips)
+            
+            if suspicious_ratio > 0.7:
+                score += 20.0
+                reasons.append(f"Большинство подключений через подозрительные типы провайдеров ({suspicious_ratio*100:.0f}%)")
+            elif suspicious_ratio > 0.5:
+                score += 10.0
+                reasons.append(f"Много подключений через подозрительные типы провайдеров ({suspicious_ratio*100:.0f}%)")
         
         return ASNScore(
             score=min(score, 100.0),
@@ -1195,9 +1266,34 @@ class IntelligentViolationDetector:
                 device_score.score * self.WEIGHTS['device']
             )
             
-            # Модификаторы
-            if asn_score.is_mobile_carrier:
-                raw_score *= 0.7  # Снижаем для мобильных операторов
+            # Применяем модификаторы на основе типов провайдеров
+            # Используем средний модификатор для всех типов провайдеров в подключениях
+            if asn_score.asn_types:
+                modifiers = []
+                for provider_type in asn_score.asn_types:
+                    modifier = self.asn_analyzer.PROVIDER_TYPE_MODIFIERS.get(
+                        provider_type,
+                        self.asn_analyzer.PROVIDER_TYPE_MODIFIERS['unknown']
+                    )
+                    modifiers.append(modifier)
+                
+                # Используем средний модификатор (взвешенный по количеству подключений)
+                avg_modifier = sum(modifiers) / len(modifiers) if modifiers else 1.0
+                score_before_modifier = raw_score
+                raw_score *= avg_modifier
+                
+                logger.debug(
+                    "Applied ASN modifier %.2f for provider types: %s (score: %.2f -> %.2f)",
+                    avg_modifier, ', '.join(asn_score.asn_types), score_before_modifier, raw_score
+                )
+            else:
+                # Fallback для обратной совместимости
+                if asn_score.is_mobile_carrier:
+                    raw_score *= 0.5  # Снижаем для мобильных операторов
+                elif asn_score.is_datacenter:
+                    raw_score *= 1.5  # Повышаем для датацентров
+                elif asn_score.is_vpn:
+                    raw_score *= 1.8  # Сильно повышаем для VPN
             
             # Если есть действительно одновременные подключения (скор > 0), минимум 85
             # Проверяем, что temporal_score > 0, что означает обнаружение одновременных подключений

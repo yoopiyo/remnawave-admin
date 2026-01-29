@@ -134,21 +134,14 @@ class GeoIPService:
                     # Используем данные из локальной базы
                     provider_type = asn_record.get('provider_type')
                     if provider_type:
-                        is_mobile_carrier = provider_type == 'mobile'
-                        is_datacenter = provider_type == 'datacenter'
+                        # Определяем флаги для обратной совместимости
+                        is_mobile_carrier = provider_type in ('mobile', 'mobile_isp')
+                        is_datacenter = provider_type in ('hosting', 'datacenter')
                         is_vpn = provider_type == 'vpn'
                         
-                        # Определяем connection_type
-                        if provider_type == 'mobile':
-                            connection_type = 'mobile'
-                        elif provider_type == 'datacenter':
-                            connection_type = 'datacenter'
-                        elif provider_type == 'vpn':
-                            connection_type = 'vpn'
-                        elif provider_type == 'isp':
-                            connection_type = 'residential'
-                        else:
-                            connection_type = provider_type or 'residential'
+                        # Используем provider_type напрямую как connection_type
+                        # Это позволяет использовать детальную классификацию
+                        connection_type = provider_type
                         
                         # Извлекаем регион и город из базы ASN
                         region = asn_record.get('region')
