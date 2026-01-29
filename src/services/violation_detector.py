@@ -766,15 +766,26 @@ class GeoAnalyzer:
                         # Если есть координаты, проверяем реальное расстояние
                         if prev_lat and prev_lon and curr_lat and curr_lon:
                             distance_km = self._haversine_distance(prev_lat, prev_lon, curr_lat, curr_lon)
-                            # Только если расстояние > 100 км, добавляем минимальный скор
-                            if distance_km > self.MIN_DISTANCE_FOR_DIFFERENT_CITIES:
+                            # Градуированная оценка по расстоянию:
+                            # < 50 км: 0 (очень близко, вероятно погрешность GeoIP или пригород)
+                            # 50-100 км: 2 (умеренно близко)
+                            # > 100 км: 5 (разные регионы)
+                            if distance_km <= 50:
+                                # Очень близко - игнорируем (возможно погрешность GeoIP)
+                                pass
+                            elif distance_km <= self.MIN_DISTANCE_FOR_DIFFERENT_CITIES:
+                                # Умеренно близко - минимальный скор
+                                score = max(score, 2.0)
+                                if not reasons:
+                                    reasons.append(f"Близкие города: {prev_city} → {curr_city} ({distance_km:.0f} км)")
+                            else:
+                                # Далеко - стандартный скор
                                 score = max(score, 5.0)
                                 if not reasons:
                                     reasons.append(f"Разные города одной страны: {prev_city} → {curr_city} ({distance_km:.0f} км)")
-                            # Если расстояние < 100 км, скорее всего это близкие города или погрешность GeoIP
                         else:
                             # Нет координат - добавляем минимальный скор на всякий случай
-                            score = max(score, 5.0)
+                            score = max(score, 3.0)
                             if not reasons:
                                 reasons.append(f"Разные города одной страны: {prev_city} → {curr_city}")
         
@@ -1474,14 +1485,41 @@ class IntelligentViolationDetector:
                 elif asn_score.is_vpn:
                     raw_score *= 1.8  # Сильно повышаем для VPN
             
+            # Детекция паттерна переключения сетей (Mobile <-> WiFi)
+            # Если обнаружен такой паттерн, значительно снижаем скор,
+            # т.к. это нормальное поведение пользователя
+            is_network_switch = self._detect_network_switch_pattern(asn_score.asn_types)
+            if is_network_switch:
+                # Снижаем скор на 50% если это похоже на переключение сетей
+                score_before_switch = raw_score
+                raw_score *= 0.5
+                logger.debug(
+                    "Network switch pattern detected (mobile + home ISP), reducing score: %.2f -> %.2f",
+                    score_before_switch, raw_score
+                )
+
+            # Проверяем, от одного ли провайдера (ASN) все IP
+            # Если да, это снижает вероятность шаринга
+            is_same_asn, asn_ratio = await self._check_same_asn_pattern(active_connections, connection_history)
+            if is_same_asn and asn_ratio >= 0.8:
+                # Все IP от одного провайдера - снижаем скор
+                score_before_asn = raw_score
+                raw_score *= 0.7  # 30% снижение
+                logger.debug(
+                    "Same ASN pattern detected (%.0f%% from same provider), reducing score: %.2f -> %.2f",
+                    asn_ratio * 100, score_before_asn, raw_score
+                )
+
             # Если есть серьёзные одновременные подключения (высокий скор), устанавливаем минимум
             # Но только если temporal_score достаточно высокий (80+), что указывает на реальное нарушение
             # Не применяем минимум для пограничных случаев (переключение сетей, несколько устройств)
-            if temporal_score.score >= 80.0 and temporal_score.simultaneous_connections_count > 1:
-                raw_score = max(raw_score, 85.0)
-            elif temporal_score.score >= 40.0 and temporal_score.simultaneous_connections_count > 1:
-                # Пограничные случаи - устанавливаем минимум для мониторинга, но не блокировки
-                raw_score = max(raw_score, 50.0)
+            # И не применяем если обнаружен паттерн переключения сетей
+            if not is_network_switch:
+                if temporal_score.score >= 80.0 and temporal_score.simultaneous_connections_count > 1:
+                    raw_score = max(raw_score, 85.0)
+                elif temporal_score.score >= 40.0 and temporal_score.simultaneous_connections_count > 1:
+                    # Пограничные случаи - устанавливаем минимум для мониторинга, но не блокировки
+                    raw_score = max(raw_score, 50.0)
             
             # Определяем рекомендуемое действие
             recommended_action = self._get_action(raw_score)
@@ -1520,6 +1558,80 @@ class IntelligentViolationDetector:
             )
             return None
     
+    def _detect_network_switch_pattern(self, asn_types: Set[str]) -> bool:
+        """
+        Определить, выглядит ли паттерн подключений как переключение сетей (WiFi <-> Mobile).
+
+        Паттерн переключения сетей:
+        - Есть мобильный провайдер (mobile, mobile_isp) И
+        - Есть домашний/проводной провайдер (fixed, isp, residential, regional_isp)
+
+        Это типичная ситуация когда пользователь переключается между WiFi дома и мобильным интернетом.
+
+        Args:
+            asn_types: Множество типов провайдеров в подключениях
+
+        Returns:
+            True если паттерн похож на переключение сетей
+        """
+        mobile_types = {'mobile', 'mobile_isp'}
+        home_types = {'fixed', 'isp', 'residential', 'regional_isp'}
+
+        has_mobile = bool(asn_types & mobile_types)
+        has_home = bool(asn_types & home_types)
+
+        return has_mobile and has_home
+
+    async def _check_same_asn_pattern(
+        self,
+        connections: List[ActiveConnection],
+        connection_history: List[Dict[str, Any]]
+    ) -> tuple[bool, float]:
+        """
+        Проверить, принадлежат ли IP одному провайдеру (ASN).
+
+        Если все или большинство IP от одного провайдера, это снижает вероятность шаринга,
+        т.к. один пользователь обычно использует одного провайдера (особенно мобильного).
+
+        Returns:
+            Tuple (is_same_asn, ratio) где:
+            - is_same_asn: True если большинство IP от одного провайдера
+            - ratio: доля IP от основного провайдера (0.0 - 1.0)
+        """
+        # Собираем все уникальные IP
+        all_ips = set()
+        for conn in connections:
+            all_ips.add(str(conn.ip_address))
+        for conn in connection_history[-10:]:  # Последние 10 записей
+            ip = str(conn.get("ip_address", ""))
+            if ip:
+                all_ips.add(ip)
+
+        if len(all_ips) <= 1:
+            return True, 1.0
+
+        # Получаем ASN для каждого IP
+        ip_metadata = await self.geo_analyzer.geoip.lookup_batch(list(all_ips))
+
+        asn_counts: Dict[Optional[int], int] = {}
+        for ip, meta in ip_metadata.items():
+            asn = meta.asn
+            asn_counts[asn] = asn_counts.get(asn, 0) + 1
+
+        if not asn_counts:
+            return False, 0.0
+
+        # Находим самый частый ASN
+        max_asn_count = max(asn_counts.values())
+        total_ips = len(ip_metadata)
+
+        ratio = max_asn_count / total_ips if total_ips > 0 else 0.0
+
+        # Считаем "один провайдер" если >= 70% IP от него
+        is_same_asn = ratio >= 0.7
+
+        return is_same_asn, ratio
+
     def _get_action(self, score: float) -> ViolationAction:
         """Определить рекомендуемое действие на основе скора."""
         if score < self.THRESHOLDS['no_action']:
