@@ -27,7 +27,7 @@ def bot_config_menu_keyboard() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text=_("bot_config.categories"), callback_data="bot_config:categories")],
             [InlineKeyboardButton(text=_("bot_config.all_settings"), callback_data="bot_config:all")],
             [InlineKeyboardButton(text=_("bot_config.reload"), callback_data="bot_config:reload")],
-            nav_row(NavTarget.SYSTEM),
+            nav_row(NavTarget.SYSTEM_MENU),
         ]
     )
 
