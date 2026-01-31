@@ -1,28 +1,15 @@
+# Remnawave Node Agent — лёгкий образ для деплоя на нодах
 FROM python:3.12-slim
-
-ENV PYTHONUNBUFFERED=1 \
-    PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1 \
-    PIP_DISABLE_PIP_VERSION_CHECK=1 \
-    PYTHONPATH=/app
 
 WORKDIR /app
 
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends \
-        curl \
-        build-essential \
-        python3-dev \
-        libpq-dev \
-    && rm -rf /var/lib/apt/lists/*
-
 COPY requirements.txt .
-RUN pip install --prefer-binary --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt
 
-COPY src ./src
-COPY locales ./locales
-COPY alembic ./alembic
-COPY alembic.ini .
-COPY scripts ./scripts
+COPY src/ ./src/
 
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONPATH=/app
+
+# Запуск из корня проекта: python -m src.main
 CMD ["python", "-m", "src.main"]
