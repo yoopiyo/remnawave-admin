@@ -738,6 +738,9 @@ async def send_violation_notification(
     violation_score: dict,
     user_info: dict | None = None,
     force: bool = False,
+    active_connections: list | None = None,
+    ip_metadata: dict | None = None,
+    violation_start_time: datetime | None = None,
 ) -> None:
     """Отправляет уведомление о нарушении в Telegram топик.
 
@@ -747,6 +750,9 @@ async def send_violation_notification(
         violation_score: Словарь с данными о нарушении (ViolationScore)
         user_info: Опциональная информация о пользователе из БД
         force: Если True, игнорирует throttling и отправляет уведомление в любом случае
+        active_connections: Список активных подключений пользователя
+        ip_metadata: Словарь метаданных IP адресов {ip: IPMetadata}
+        violation_start_time: Время начала нарушения (для расчёта длительности)
     """
     settings = get_settings()
 
@@ -772,183 +778,178 @@ async def send_violation_notification(
 
     # Используем топик для нарушений (подозреваемых пользователей)
     topic_id = settings.get_topic_for_violations()
-    
+
     try:
         # Получаем информацию о пользователе если не передана
         if not user_info:
             from src.services.database import db_service
             user_info = await db_service.get_user_by_uuid(user_uuid)
-        
-        username = "n/a"
-        short_uuid = ""
-        if user_info:
-            username = user_info.get("username", user_info.get("response", {}).get("username", "n/a"))
-            short_uuid = user_info.get("short_uuid", user_info.get("response", {}).get("shortUuid", ""))
-        
+
+        # Извлекаем данные пользователя
+        info = user_info.get("response", user_info) if user_info else {}
+        username = info.get("username", "n/a")
+        email = info.get("email", "")
+        telegram_id = info.get("telegramId")
+        description = info.get("description", "")
+        device_limit = info.get("hwidDeviceLimit", 1)
+        if device_limit == 0:
+            device_limit = "∞"
+
         # Извлекаем данные о нарушении
         total_score = violation_score.get("total", violation_score.get("score", 0))
-        recommended_action_raw = violation_score.get("recommended_action", violation_score.get("action", "unknown"))
-        reasons = violation_score.get("reasons", [])
         breakdown = violation_score.get("breakdown", {})
-        confidence = violation_score.get("confidence", 0.0)
-        
-        # Извлекаем значение действия (может быть enum или строка)
-        if hasattr(recommended_action_raw, 'value'):
-            recommended_action_str = recommended_action_raw.value
-        else:
-            recommended_action_str = str(recommended_action_raw)
-        
-        # Определяем эмодзи и уровень критичности
-        if total_score >= 95:
-            emoji = "🚨"
-            level = "КРИТИЧЕСКОЕ"
-        elif total_score >= 90:
-            emoji = "🔴"
-            level = "Высокое"
-        elif total_score >= 80:
-            emoji = "🟠"
-            level = "Среднее"
-        elif total_score >= 65:
-            emoji = "🟡"
-            level = "Низкое"
-        else:
-            emoji = "🔵"
-            level = "Мониторинг"
-        
-        # Маппинг действий на русские названия
-        action_names = {
-            "no_action": "Без действия",
-            "monitor": "Мониторинг",
-            "warn": "Предупреждение",
-            "soft_block": "Мягкая блокировка",
-            "temp_block": "Временная блокировка",
-            "hard_block": "Блокировка",
-        }
-        
-        action_name = action_names.get(recommended_action_str, recommended_action_str)
-        
+
+        # Получаем количество одновременных IP из temporal breakdown
+        ip_count = 0
+        if breakdown and "temporal" in breakdown:
+            temporal_data = breakdown["temporal"]
+            if isinstance(temporal_data, dict):
+                ip_count = temporal_data.get("simultaneous_connections_count", 0)
+            elif hasattr(temporal_data, 'simultaneous_connections_count'):
+                ip_count = temporal_data.simultaneous_connections_count
+
+        # Если нет ip_count из breakdown, считаем из активных подключений
+        if ip_count == 0 and active_connections:
+            ip_count = len(set(str(c.ip_address) for c in active_connections))
+
+        # Время в нарушении (секунды)
+        violation_duration_sec = 0
+        if violation_start_time:
+            violation_duration_sec = int((now - violation_start_time).total_seconds())
+
+        # Время в Москве (UTC+3)
+        moscow_time = now + timedelta(hours=3)
+        moscow_time_str = moscow_time.strftime("%d.%m.%Y %H:%M:%S")
+
+        # Собираем уникальные IP и ноды
+        unique_ips = set()
+        node_uuids = set()
+        if active_connections:
+            for conn in active_connections:
+                unique_ips.add(str(conn.ip_address))
+                if hasattr(conn, 'node_uuid') and conn.node_uuid:
+                    node_uuids.add(conn.node_uuid)
+
+        # Получаем имена нод по UUID
+        nodes_used = set()
+        if node_uuids:
+            try:
+                from src.services.database import db_service
+                for node_uuid in node_uuids:
+                    node_info = await db_service.get_node_by_uuid(node_uuid)
+                    if node_info and node_info.get("name"):
+                        nodes_used.add(node_info.get("name"))
+                    else:
+                        nodes_used.add(node_uuid[:8])  # Короткий UUID если имя недоступно
+            except Exception as node_error:
+                logger.debug("Failed to get node names: %s", node_error)
+                # Используем короткие UUID
+                nodes_used = {uuid[:8] for uuid in node_uuids}
+
+        # Собираем информацию об устройствах
+        devices_info = []
+        if breakdown and "device" in breakdown:
+            device_data = breakdown["device"]
+            if isinstance(device_data, dict):
+                unique_fp = device_data.get("unique_fingerprints_count", 0)
+                os_count = device_data.get("different_os_count", 0)
+                if unique_fp > 0 or os_count > 0:
+                    devices_info.append(f"{unique_fp} устройств, {os_count} ОС")
+            elif hasattr(device_data, 'unique_fingerprints_count'):
+                unique_fp = device_data.unique_fingerprints_count
+                os_count = device_data.different_os_count if hasattr(device_data, 'different_os_count') else 0
+                if unique_fp > 0 or os_count > 0:
+                    devices_info.append(f"{unique_fp} устройств, {os_count} ОС")
+
+        # Формируем сообщение
         lines = []
-        lines.append(f"{emoji} <b>Обнаружено нарушение</b>")
+        lines.append("🚨 <b>НАРУШИТЕЛЬ ЛИМИТА</b>")
         lines.append("")
-        
+
         # Информация о пользователе
-        lines.append("👤 <b>Пользователь</b>")
-        lines.append(f"   Username: <code>{_esc(username)}</code>")
-        if short_uuid:
-            lines.append(f"   Short UUID: <code>{short_uuid}</code>")
-        lines.append(f"   UUID: <code>{user_uuid[:8]}...</code>")
+        if email:
+            lines.append(f"📧 Email: <code>{_esc(email)}</code>")
+        else:
+            lines.append(f"📧 Username: <code>{_esc(username)}</code>")
+
+        if telegram_id is not None:
+            lines.append(f"📱 TG ID: <code>{telegram_id}</code>")
+
+        if description:
+            lines.append(f"📝 Описание: <code>{_esc(description[:100])}</code>")
+
         lines.append("")
-        
-        # Информация о нарушении
-        lines.append("⚠️ <b>Детали нарушения</b>")
-        lines.append(f"   Уровень: <b>{level}</b>")
-        lines.append(f"   Скор: <code>{total_score:.1f}/100</code>")
-        lines.append(f"   Уверенность: <code>{confidence*100:.0f}%</code>")
-        lines.append(f"   Рекомендуемое действие: <b>{action_name}</b>")
+
+        # IP адреса
+        lines.append(f"🌐 IP адресов: <b>{ip_count}/{device_limit}</b>")
+
+        if unique_ips:
+            lines.append("📍 IP (провайдеры):")
+            for ip in sorted(unique_ips):
+                provider_info = ""
+                country_code = ""
+                if ip_metadata and ip in ip_metadata:
+                    meta = ip_metadata[ip]
+                    if hasattr(meta, 'asn_org') and meta.asn_org:
+                        provider_info = meta.asn_org
+                    if hasattr(meta, 'country_code') and meta.country_code:
+                        country_code = meta.country_code
+
+                if provider_info or country_code:
+                    suffix = ""
+                    if provider_info:
+                        suffix = f" - {_esc(provider_info)}"
+                    if country_code:
+                        suffix += f" ({country_code})"
+                    lines.append(f"   <code>{ip}</code>{suffix}")
+                else:
+                    lines.append(f"   <code>{ip}</code>")
+
+        # Ноды
+        if nodes_used:
+            nodes_str = ", ".join(sorted(nodes_used))
+            lines.append(f"🖥 Ноды: <code>{_esc(nodes_str)}</code>")
+
         lines.append("")
-        
-        # Причины нарушения
-        if reasons:
-            lines.append("📋 <b>Причины</b>")
-            for i, reason in enumerate(reasons[:10], 1):  # Показываем максимум 10 причин
-                lines.append(f"   {i}. {_esc(reason)}")
-            if len(reasons) > 10:
-                lines.append(f"   ... и ещё {len(reasons) - 10} причин")
-            lines.append("")
-        
-        # Детализация по факторам (если есть)
-        if breakdown:
-            lines.append("📊 <b>Детализация по факторам</b>")
-            
-            factor_names = {
-                "temporal": "Временной паттерн",
-                "geo": "География",
-                "asn": "Тип провайдера",
-                "profile": "Профиль пользователя",
-                "device": "Fingerprint устройств",
-            }
-            
-            for factor_key, factor_data in breakdown.items():
-                factor_name = factor_names.get(factor_key, factor_key)
-                factor_score = 0
-                factor_reasons = []
-                
-                # Обрабатываем как словарь
-                if isinstance(factor_data, dict):
-                    factor_score = factor_data.get("score", factor_data.get("total", 0))
-                    factor_reasons = factor_data.get("reasons", [])
-                # Обрабатываем как объект с атрибутами
-                elif hasattr(factor_data, 'score'):
-                    factor_score = factor_data.score
-                    if hasattr(factor_data, 'reasons'):
-                        factor_reasons = factor_data.reasons
-                # Обрабатываем как число
-                elif isinstance(factor_data, (int, float)):
-                    factor_score = factor_data
-                
-                if factor_score > 0:
-                    lines.append(f"   {factor_name}: <code>{factor_score:.1f}</code>")
-                    if factor_reasons and len(factor_reasons) <= 2:
-                        for reason in factor_reasons:
-                            lines.append(f"      • {_esc(reason)}")
-            
-            lines.append("")
-        
-        # Информация о типах провайдеров (если есть в breakdown)
-        if breakdown and "asn" in breakdown:
-            asn_data = breakdown["asn"]
-            asn_types = None
-            
-            # Обрабатываем как словарь
-            if isinstance(asn_data, dict):
-                asn_types = asn_data.get("asn_types", set())
-            # Обрабатываем как объект с атрибутом asn_types
-            elif hasattr(asn_data, 'asn_types'):
-                asn_types = asn_data.asn_types
-            
-            if asn_types:
-                # Преобразуем set в list если нужно
-                if isinstance(asn_types, set):
-                    asn_types = list(asn_types)
-                
-                type_names = {
-                    'isp': 'Крупные провайдеры',
-                    'regional_isp': 'Региональные ISP',
-                    'fixed': 'Проводной ШПД',
-                    'mobile_isp': 'Мобильные операторы',
-                    'hosting': 'Хостинг',
-                    'business': 'Корпоративные',
-                    'mobile': 'Мобильные пулы',
-                    'infrastructure': 'Магистральная инфраструктура',
-                    'vpn': 'VPN/Proxy',
-                }
-                types_display = ", ".join([type_names.get(t, t) for t in asn_types])
-                lines.append(f"   Типы провайдеров: <code>{types_display}</code>")
-                lines.append("")
-        
+
+        # Устройства
+        if devices_info:
+            lines.append(f"📲 Устройства: {', '.join(devices_info)}")
+        else:
+            lines.append(f"📲 Устройства: —")
+
+        # Время в нарушении
+        if violation_duration_sec > 0:
+            lines.append(f"⏱ В нарушении: <code>{violation_duration_sec} сек</code>")
+
+        # Скор нарушения
+        lines.append(f"📊 Скор: <code>{total_score:.1f}/100</code>")
+
+        # Время
+        lines.append(f"🕐 Время (МСК): <code>{moscow_time_str}</code>")
+
         text = "\n".join(lines)
-        
+
         message_kwargs = {
             "chat_id": settings.notifications_chat_id,
             "text": text,
             "parse_mode": "HTML",
         }
-        
+
         if topic_id is not None:
             message_kwargs["message_thread_id"] = topic_id
-        
+
         await bot.send_message(**message_kwargs)
 
         # Обновляем кэш после успешной отправки
         _violation_notification_cache[user_uuid] = datetime.utcnow()
 
         logger.info(
-            "Violation notification sent successfully user_uuid=%s score=%.1f action=%s topic_id=%s cooldown=%d_min",
+            "Violation notification sent successfully user_uuid=%s score=%.1f ip_count=%d topic_id=%s",
             user_uuid,
             total_score,
-            action_name,
-            topic_id,
-            VIOLATION_NOTIFICATION_COOLDOWN_MINUTES
+            ip_count,
+            topic_id
         )
 
     except Exception as exc:

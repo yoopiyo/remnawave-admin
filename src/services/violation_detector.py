@@ -226,6 +226,45 @@ class TemporalAnalyzer:
                 # Если есть действительно одновременные подключения с разных IP
                 if max_simultaneous_ips > 1:
                     simultaneous_count = max_simultaneous_ips
+
+                    # Логика определения нарушения:
+                    # - Базовый лимит = количество устройств пользователя
+                    # - Буфер +1 на случай кратковременного overlap при переключении сети
+                    # - Если IP > лимит + буфер - это превышение
+                    #
+                    # Примеры:
+                    # - 1 устройство: лимит=1, буфер=1, порог=2 → 3+ IP = нарушение, 2 IP = предупреждение
+                    # - 3 устройства: лимит=3, буфер=1, порог=4 → 5+ IP = нарушение, 4 IP = предупреждение
+                    network_switch_buffer = 1
+                    soft_threshold = max_allowed_simultaneous + network_switch_buffer  # Мягкий порог (предупреждение)
+                    hard_threshold = max_allowed_simultaneous + network_switch_buffer + 1  # Жёсткий порог (нарушение)
+
+                    # Сначала проверяем: IP > количества устройств?
+                    # Это уже подозрительно, даже если в пределах буфера
+                    if simultaneous_count > max_allowed_simultaneous:
+                        excess_over_devices = simultaneous_count - max_allowed_simultaneous
+
+                        if simultaneous_count > hard_threshold:
+                            # Значительное превышение - точно нарушение
+                            excess = simultaneous_count - hard_threshold
+                            if excess >= 2 or simultaneous_count > 5:
+                                # Сильное превышение
+                                score = 100.0
+                                reasons.append(f"Превышение лимита устройств: {simultaneous_count} IP при лимите {user_device_count} устройств (превышение на {excess_over_devices})")
+                            else:
+                                # Умеренное превышение
+                                score = 80.0
+                                reasons.append(f"Превышение лимита устройств: {simultaneous_count} IP при лимите {user_device_count} устройств")
+                        elif simultaneous_count > soft_threshold:
+                            # Небольшое превышение мягкого порога
+                            score = 60.0
+                            reasons.append(f"Возможное превышение лимита: {simultaneous_count} IP при лимите {user_device_count} устройств")
+                        else:
+                            # IP > устройств, но в пределах буфера - может быть переключение сети
+                            # Даём небольшой скор для мониторинга
+                            score = 40.0
+                            reasons.append(f"Подозрительная активность: {simultaneous_count} IP при лимите {user_device_count} устройств (возможно переключение сети)")
+                    # Если IP <= устройств - всё нормально, не добавляем скор
                     # Учитываем количество устройств пользователя с буфером для переключения сетей
                     # Буфер учитывает:
                     # - Переключение WiFi <-> Mobile (кратковременно 2 IP от одного устройства)
@@ -659,8 +698,15 @@ class GeoAnalyzer:
         
         # Получаем метаданные для всех IP одним batch запросом (оптимизировано)
         ip_metadata: Dict[str, IPMetadata] = await self.geoip.lookup_batch(list(all_ips))
-        
+
         for ip, metadata in ip_metadata.items():
+            # Debug: логируем данные для каждого IP
+            logger.debug(
+                "GeoIP for %s: country=%s, city=%s, region=%s, asn=%s (%s), connection_type=%s, coords=(%s, %s)",
+                ip, metadata.country_code, metadata.city, metadata.region,
+                metadata.asn, metadata.asn_org, metadata.connection_type,
+                metadata.latitude, metadata.longitude
+            )
             if metadata.country_code:
                 countries.add(metadata.country_code)
             if metadata.city:
@@ -1498,17 +1544,37 @@ class IntelligentViolationDetector:
             # Получаем активные подключения (только за последние 5 минут)
             # Это учитывает роутинг в приложении - старые подключения не считаются активными
             active_connections = await self.connection_monitor.get_user_active_connections(user_uuid, max_age_minutes=5)
-            
+
             # Получаем историю подключений
             history_days = max(1, window_minutes // (24 * 60) + 1)
             connection_history = await self.db.get_connection_history(user_uuid, days=history_days)
-            
+
+            # Добавляем debug-логирование для диагностики
+            logger.info(
+                "Violation check for user %s: device_count=%d, active_connections=%d, history_records=%d",
+                user_uuid, user_device_count, len(active_connections), len(connection_history)
+            )
+            for i, conn in enumerate(active_connections):
+                logger.debug(
+                    "  Active connection %d: ip=%s, connected_at=%s",
+                    i + 1, conn.ip_address, conn.connected_at
+                )
+
             # Анализируем временные паттерны (передаём количество устройств)
             temporal_score = self.temporal_analyzer.analyze(active_connections, connection_history, user_device_count)
             
             # Анализируем геолокацию (async)
             geo_score = await self.geo_analyzer.analyze(active_connections, connection_history)
-            
+
+            # Debug-логирование гео-данных для диагностики проблем с городами
+            logger.info(
+                "Geo analysis for user %s: countries=%s, cities=%s, score=%.1f",
+                user_uuid, geo_score.countries, geo_score.cities, geo_score.score
+            )
+            if geo_score.reasons:
+                for reason in geo_score.reasons:
+                    logger.info("  Geo reason: %s", reason)
+
             # Анализируем тип провайдера (ASN) (async)
             asn_score = await self.asn_analyzer.analyze(active_connections, connection_history)
             
