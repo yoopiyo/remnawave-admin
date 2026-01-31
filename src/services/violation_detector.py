@@ -1556,7 +1556,7 @@ class IntelligentViolationDetector:
             connection_history = await self.db.get_connection_history(user_uuid, days=history_days)
 
             # Добавляем debug-логирование для диагностики
-            logger.info(
+            logger.debug(
                 "Violation check for user %s: device_count=%d, active_connections=%d, history_records=%d",
                 user_uuid, user_device_count, len(active_connections), len(connection_history)
             )
@@ -1573,13 +1573,13 @@ class IntelligentViolationDetector:
             geo_score = await self.geo_analyzer.analyze(active_connections, connection_history)
 
             # Debug-логирование гео-данных для диагностики проблем с городами
-            logger.info(
+            logger.debug(
                 "Geo analysis for user %s: countries=%s, cities=%s, score=%.1f",
                 user_uuid, geo_score.countries, geo_score.cities, geo_score.score
             )
             if geo_score.reasons:
                 for reason in geo_score.reasons:
-                    logger.info("  Geo reason: %s", reason)
+                    logger.debug("  Geo reason: %s", reason)
 
             # Анализируем тип провайдера (ASN) (async)
             asn_score = await self.asn_analyzer.analyze(active_connections, connection_history)
