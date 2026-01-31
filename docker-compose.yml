@@ -1,27 +1,34 @@
 version: '3.8'
 
-# Вариант docker-compose для локального тестирования
-# Использование: docker-compose -f docker-compose.local.yml up
-
 services:
   node-agent:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: remnawave-node-agent-local
+    container_name: remnawave-node-agent
     restart: unless-stopped
     
+    # Переменные окружения из .env файла
     env_file:
       - .env
     
-    # Для локального тестирования монтируем тестовые логи
+    # Монтируем логи Xray/Remnawave
+    # ВАЖНО: Измени путь на реальный путь к логам на твоей системе
     volumes:
-      - ./test-logs:/var/log/remnanode:ro
+      # Вариант 1: Реальные логи на хосте (продакшен)
+      - /var/log/remnanode:/var/log/remnanode:ro
+      
+      # Вариант 2: Для тестирования с тестовыми логами (раскомментируй)
+      # - ./test-logs:/var/log/remnanode:ro
     
-    # Подключаемся к Admin Bot через host.docker.internal
-    # В .env должно быть: AGENT_COLLECTOR_URL=http://host.docker.internal:8000
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    # Сеть для подключения к Admin Bot
+    # Вариант 1: Если Admin Bot в той же сети (раскомментируй)
+    networks:
+      - remnawave-network
+    
+    # Вариант 2: Если Admin Bot на хосте (используй host.docker.internal)
+    # В .env укажи: AGENT_COLLECTOR_URL=http://host.docker.internal:8000
+    # И закомментируй секцию networks выше
     
     # Логирование
     logging:
@@ -29,3 +36,11 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+
+# Секция networks должна быть на верхнем уровне (не внутри services)
+networks:
+  remnawave-network:
+    # Используем внешнюю сеть (если Admin Bot уже запущен)
+    external: true
+    # ИЛИ создаём новую сеть (раскомментируй если сети нет):
+    # external: false
