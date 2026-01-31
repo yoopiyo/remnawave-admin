@@ -314,16 +314,34 @@ async def receive_connections(
                                         'breakdown': violation_score.breakdown,
                                         'confidence': violation_score.confidence,
                                     }
-                                    
+
                                     # Получаем информацию о пользователе из БД
                                     user_info = await db_service.get_user_by_uuid(user_uuid)
-                                    
+
+                                    # Получаем активные подключения для уведомления
+                                    active_connections = await connection_monitor.get_user_active_connections(
+                                        user_uuid, max_age_minutes=5
+                                    )
+
+                                    # Получаем GeoIP метаданные для IP адресов
+                                    ip_metadata = {}
+                                    if active_connections:
+                                        try:
+                                            from src.services.geoip import get_geoip_service
+                                            geoip = get_geoip_service()
+                                            unique_ips = list(set(str(c.ip_address) for c in active_connections))
+                                            ip_metadata = await geoip.lookup_batch(unique_ips)
+                                        except Exception as geo_error:
+                                            logger.debug("Failed to get GeoIP data for notification: %s", geo_error)
+
                                     # Отправляем уведомление асинхронно (не блокируем обработку запроса)
                                     await send_violation_notification(
                                         bot=bot,
                                         user_uuid=user_uuid,
                                         violation_score=violation_dict,
-                                        user_info=user_info
+                                        user_info=user_info,
+                                        active_connections=active_connections,
+                                        ip_metadata=ip_metadata,
                                     )
                                 else:
                                     logger.debug("Bot not available in app.state, skipping violation notification")
