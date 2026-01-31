@@ -1534,21 +1534,32 @@ class DatabaseService:
                             raw_data = json.loads(raw_data)
                         except json.JSONDecodeError:
                             pass
-                    
+
                     if isinstance(raw_data, dict):
                         # Проверяем различные возможные поля с данными об устройствах
-                        # Может быть в response.devices или напрямую devicesCount
                         response = raw_data.get("response", raw_data)
+
+                        # Основное поле - hwidDeviceLimit (лимит HWID устройств)
+                        hwid_device_limit = response.get("hwidDeviceLimit")
+                        if hwid_device_limit is not None:
+                            # 0 означает безлимит, но для расчёта используем 1
+                            limit = int(hwid_device_limit)
+                            if limit == 0:
+                                return 1  # Безлимит - используем 1 как базу
+                            return max(1, limit)
+
+                        # Fallback: devicesCount (старый формат)
                         devices_count = response.get("devicesCount")
                         if devices_count is not None:
                             return max(1, int(devices_count))
-                        
-                        # Или может быть массив devices
+
+                        # Fallback: массив devices
                         devices = response.get("devices", [])
                         if isinstance(devices, list) and len(devices) > 0:
                             return len(devices)
-                
+
                 # Если данных нет, возвращаем 1 по умолчанию
+                logger.debug("No device limit data found for user %s, using default 1", user_uuid)
                 return 1
         except Exception as e:
             logger.error("Error getting user devices count for %s: %s", user_uuid, e, exc_info=True)
